@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Las dos únicas cuentas del proyecto (el registro está apagado).
+    // Misma lista que database.rules.json y ACCESO en index.html.
+    function miembro() {
+      return request.auth != null
+        && request.auth.token.email.lower() in ['alibombero@gmail.com', 'gpatron18@hotmail.com'];
+    }
+    function imagenValida() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+    match /pagos/{archivo} {
+      allow get:          if miembro();
+      allow create:       if miembro() && imagenValida();
+      allow update:       if false;
+      allow list, delete: if false;
+    }
+  }
+}

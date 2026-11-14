@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Finanzas_BP">
+<meta name="theme-color" content="#0038B3">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<title>Finanzas_BP</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap");
+/* Estilo de 3DPrinter: fondo claro, tarjetas blancas, azul rey, campos azul claro */
+:root {
+  --bg:#F3F6FC; --surface:#FFFFFF; --surface2:#EEF3FD;
+  --border:#E3E9F4;
+  --accent:#0038B3; --accent2:#0038B3; --accent-soft:#E6EEFC;
+  --green:#15803D; --orange:#B45309; --red:#DC2626;
+  --text:#0B1324; --text2:#4B5568; --text3:#8A94A6;
+  --font:"Inter",sans-serif; --font-h:"Plus Jakarta Sans","Inter",sans-serif; --mono:"JetBrains Mono",monospace;
+  --r-sm:12px; --r-md:14px; --r-lg:22px; --r-xl:28px;
+  --shadow:0 10px 30px rgba(15,35,90,.08);
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { font-family:var(--font); background:var(--bg); color:var(--text); height:100dvh; overflow:hidden; }
+button, input, select { font-family:var(--font); }
+.hidden { display:none !important; }
+
+/* AUTH */
+.auth { min-height:100dvh; overflow-y:auto; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 16px; }
+.auth-card { width:100%; max-width:420px; background:var(--surface); border-radius:var(--r-xl); box-shadow:var(--shadow); padding:28px 24px; display:flex; flex-direction:column; gap:14px; }
+.brand { display:flex; align-items:center; justify-content:center; gap:12px; }
+.brand .ic { width:56px; height:56px; border-radius:16px; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 18px rgba(0,56,179,.3); }
+.brand .nm { font-family:var(--font-h); font-weight:800; font-size:27px; line-height:1; letter-spacing:-.5px; }
+.brand .nm span { color:var(--accent); }
+.brand .sub { font-size:12px; font-weight:600; letter-spacing:1.4px; color:var(--text2); margin-top:4px; }
+.auth-card h1 { font-family:var(--font-h); font-size:28px; font-weight:800; text-align:center; letter-spacing:-.8px; margin-top:6px; }
+.auth-card p.desc { text-align:center; color:var(--text2); font-size:15px; line-height:1.4; }
+.pill { display:flex; align-items:center; justify-content:center; gap:8px; background:var(--accent-soft); color:var(--accent); border-radius:999px; padding:9px 16px; font-size:13px; font-weight:600; text-align:center; }
+.lbl { display:flex; justify-content:space-between; align-items:baseline; font-size:14px; font-weight:700; margin-top:6px; }
+.lbl a { font-size:13px; font-weight:600; color:var(--accent); text-decoration:none; cursor:pointer; }
+.inpw { position:relative; }
+.inpw svg.l { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--text2); }
+.inpw button.eye { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text2); cursor:pointer; padding:6px; }
+.inp { width:100%; padding:15px 46px 15px 46px; border:1.5px solid transparent; border-radius:var(--r-md); font-size:16px; background:var(--surface2); outline:none; color:var(--text); }
+.inp:focus { border-color:var(--accent); background:#fff; }
+.btn { width:100%; padding:15px; border:none; border-radius:var(--r-md); font-size:17px; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 6px 14px rgba(0,56,179,.25); font-family:var(--font-h); }
+.btn:disabled { opacity:.6; }
+.btn-lite { width:100%; padding:12px; border:1.5px solid var(--border); border-radius:var(--r-md); background:var(--surface2); color:var(--accent); font-size:14px; font-weight:600; cursor:pointer; text-align:center; text-decoration:none; display:block; }
+.info { background:var(--surface2); border-radius:var(--r-lg); padding:16px; font-size:14px; color:var(--text2); line-height:1.6; }
+.info b { display:flex; align-items:center; gap:8px; color:var(--text); font-family:var(--font-h); font-size:15px; }
+.err { color:var(--red); font-size:14px; min-height:18px; text-align:center; }
+.foot { font-family:var(--mono); font-size:12px; color:var(--text3); text-align:center; margin-top:18px; max-width:360px; }
+
+/* APP */
+#app { display:none; flex-direction:column; height:100dvh; }
+#app.on { display:flex; }
+.top { background:var(--surface); padding:calc(env(safe-area-inset-top) + 12px) 16px 10px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+.top .t { flex:1; }
+.top .t b { font-size:20px; font-weight:800; font-family:var(--font-h); letter-spacing:-.4px; }
+.top .t b span { color:var(--accent); }
+.top .t div { font-size:12px; color:var(--text2); }
+.top button { background:none; border:none; font-size:22px; cursor:pointer; }
+.main { flex:1; overflow-y:auto; padding:14px 16px 110px; display:flex; flex-direction:column; gap:12px; }
+.nav { display:flex; background:var(--surface); border-top:1px solid var(--border); padding:6px 0 calc(env(safe-area-inset-bottom) + 6px); }
+.nav button { flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:11px; font-weight:600; color:var(--text2); cursor:pointer; }
+.nav button span { font-size:21px; }
+.nav button.on { color:var(--accent); }
+.fab { position:fixed; right:18px; bottom:calc(env(safe-area-inset-bottom) + 74px); width:58px; height:58px; border-radius:18px; border:none; background:var(--accent); color:#fff; font-size:30px; box-shadow:0 10px 22px rgba(0,56,179,.35); cursor:pointer; z-index:5; }
+
+.chips { display:flex; gap:8px; overflow-x:auto; flex-shrink:0; min-height:36px; scrollbar-width:none; }
+.chips::-webkit-scrollbar { display:none; }
+.chip { padding:7px 13px; border-radius:20px; border:1.5px solid var(--border); background:var(--surface2); color:var(--text2); font-size:13px; font-weight:600; white-space:nowrap; flex-shrink:0; cursor:pointer; }
+.chip.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+.stats { background:var(--surface); border-radius:var(--r-lg); display:flex; padding:14px 6px; box-shadow:var(--shadow); flex-shrink:0; }
+.stats div { flex:1; text-align:center; }
+.stats b { display:block; font-size:16px; color:var(--accent); font-family:var(--font-h); }
+.stats small { font-size:11px; color:var(--text2); }
+.card { background:var(--surface); border-radius:var(--r-lg); box-shadow:var(--shadow); padding:14px 16px; flex-shrink:0; }
+.card h3 { font-size:15px; color:var(--text); font-family:var(--font-h); margin-bottom:6px; }
+.row { display:flex; align-items:baseline; gap:8px; }
+.row .n { flex:1; font-weight:700; font-size:15px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.row .m { font-weight:800; color:var(--accent); white-space:nowrap; }
+.tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.tag { font-size:11px; padding:3px 9px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:600; }
+.tag.g { background:rgba(26,127,60,.12); color:var(--green); }
+.tag.o { background:rgba(183,121,31,.14); color:var(--orange); }
+.tag.r { background:rgba(229,56,59,.12); color:var(--red); }
+.estado { font-size:13px; font-weight:700; margin-top:4px; }
+.acts { display:flex; gap:8px; margin-top:10px; }
+.acts button { flex:1; padding:9px; border-radius:var(--r-sm); border:none; background:var(--surface2); font-size:13px; font-weight:600; color:var(--accent); cursor:pointer; }
+.acts button.del { color:var(--red); flex:0 0 46px; }
+.comp { position:relative; margin-top:8px; border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; cursor:pointer; }
+.comp img { width:100%; height:180px; object-fit:cover; object-position:top; display:block; background:var(--surface2); }
+.comp span { position:absolute; left:0; right:0; bottom:0; padding:7px; text-align:center; font-size:13px; font-weight:700; color:#fff; background:linear-gradient(transparent,rgba(0,0,0,.65)); }
+.empty { text-align:center; color:var(--text3); padding:30px 10px; font-size:14px; }
+.empty span { font-size:36px; display:block; margin-bottom:6px; }
+.day { font-size:13px; font-weight:700; color:var(--text2); margin:4px 2px -4px; }
+
+/* FORM */
+.sheet { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:flex-end; z-index:20; }
+.sheet.on { display:flex; }
+.sheet .box { background:var(--bg); width:100%; max-height:92dvh; overflow-y:auto; border-radius:22px 22px 0 0; padding:16px 16px calc(env(safe-area-inset-bottom) + 16px); display:flex; flex-direction:column; gap:10px; }
+.sheet .hd { display:flex; align-items:center; }
+.sheet .hd b { flex:1; font-size:18px; }
+.sheet .hd button { background:none; border:none; font-size:22px; cursor:pointer; color:var(--text2); }
+.f { display:flex; flex-direction:column; gap:4px; }
+.f label { font-size:11px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.3px; }
+.f input, .f select { padding:12px 13px; border:1.5px solid transparent; border-radius:var(--r-sm); font-size:16px; background:var(--surface2); width:100%; color:var(--text); outline:none; }
+.f input:focus, .f select:focus { border-color:var(--accent); background:#fff; }
+.f label { font-size:12px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; }
+.g2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.prev { width:100%; max-height:200px; object-fit:contain; border-radius:var(--r-md); background:#000; }
+.banner { padding:10px 14px; border-radius:var(--r-md); font-size:13px; font-weight:600; background:var(--accent-soft); color:var(--accent); }
+.banner.err { background:rgba(229,56,59,.1); color:var(--red); }
+
+.toast { position:fixed; left:16px; right:16px; bottom:calc(env(safe-area-inset-bottom) + 90px); background:#1C2530; color:#fff; padding:13px 16px; border-radius:var(--r-md); font-size:14px; text-align:center; opacity:0; pointer-events:none; transition:opacity .2s; z-index:50; }
+.toast.on { opacity:1; }
+.viewer { position:fixed; inset:0; background:rgba(0,0,0,.92); display:none; align-items:center; justify-content:center; z-index:60; }
+.viewer.on { display:flex; }
+.viewer img { max-width:100%; max-height:100%; object-fit:contain; }
+</style>
+</head>
+<body>
+
+<!-- ENTRAR -->
+<div class="auth" id="login">
+  <div class="auth-card">
+    <div class="brand">
+      <div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M16 13h2"/><path d="M6 6V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg></div>
+      <div><div class="nm">Finanzas<span>_BP</span></div><div class="sub">ADMINISTRACIÓN FINANCIERA</div></div>
+    </div>
+    <h1>Bienvenido de nuevo</h1>
+    <p class="desc">Pagos de tarjetas, propiedades, servicios y colegiaturas</p>
+    <div class="pill"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Acceso exclusivo para Alex y Gaby</div>
+    <div class="lbl">Correo electrónico</div>
+    <div class="inpw"><svg class="l" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+      <input class="inp" type="email" id="lEmail" placeholder="tu@correo.com" autocomplete="username" autocapitalize="off"></div>
+    <div class="lbl">Contraseña <a onclick="olvide()">¿Olvidaste tu contraseña?</a></div>
+    <div class="inpw"><svg class="l" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      <input class="inp" type="password" id="lPass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()">
+      <button class="eye" type="button" onclick="const i=$('lPass');i.type=i.type==='password'?'text':'password'" aria-label="Mostrar contraseña"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+    <div class="err" id="lErr"></div>
+    <button class="btn" id="lBtn" onclick="entrar()">Iniciar sesión <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg></button>
+    <div class="info"><b><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>Acceso restringido</b>
+      Solo Alex y Gaby tienen cuenta. Si es tu primera vez, usa «¿Olvidaste tu contraseña?» para crear la tuya.</div>
+  </div>
+  <div class="foot">Los datos se validan contra Firebase con tu cuenta.</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="top">
+    <div style="width:38px;height:38px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M16 13h2"/><path d="M6 6V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg></div>
+    <div class="t"><b>Finanzas<span>_BP</span></b><div id="who"></div></div>
+    <button onclick="salir()" title="Salir">🚪</button>
+  </div>
+  <div class="main" id="main"></div>
+  <div class="nav" id="nav">
+    <button data-v="inicio" onclick="ir('inicio')"><span>📊</span>Inicio</button>
+    <button data-v="tarjetas" onclick="ir('tarjetas')"><span>💳</span>Tarjetas</button>
+    <button data-v="propiedades" onclick="ir('propiedades')"><span>🏠</span>Propiedades</button>
+    <button data-v="servicios" onclick="ir('servicios')"><span>🧾</span>Servicios</button>
+    <button data-v="colegiaturas" onclick="ir('colegiaturas')"><span>🎓</span>Colegiaturas</button>
+  </div>
+  <button class="fab" onclick="abrirRegistro()" title="Registrar pago">＋</button>
+</div>
+
+<!-- REGISTRAR PAGO -->
+<div class="sheet" id="sheet" onclick="if(event.target===this)cerrarRegistro()">
+  <div class="box" id="sheetBox"></div>
+</div>
+<input type="file" id="camIn" accept="image/*" capture="environment" class="hidden" onchange="onFoto(this)">
+<input type="file" id="galIn" accept="image/*" class="hidden" onchange="onFoto(this)">
+
+<div class="viewer" id="viewer" onclick="this.classList.remove('on')"><img id="viewerImg" alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, push, onValue, remove, update, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
+import { initializeAppCheck, ReCaptchaV3Provider, getToken as getAppCheckToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
+         EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+
+// Proyecto propio (finanzas-bp), separado de NoteScanner: otras cuentas, otra
+// base de datos y otro Storage. Solo existen las cuentas de Alex y Gaby.
+const app = initializeApp({
+  apiKey:            "AIzaSyC8ceQD1OSe7aRcMngfVlqGGui0sAVuQpc",
+  authDomain:        "finanzas-bp.firebaseapp.com",
+  databaseURL:       "https://finanzas-bp-default-rtdb.firebaseio.com",
+  projectId:         "finanzas-bp",
+  storageBucket:     "finanzas-bp.firebasestorage.app",
+  messagingSenderId: "401601461671",
+  appId:             "1:401601461671:web:5dcc27a4ccea1e5c8f0a82"
+});
+const isLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+// Clave reCAPTCHA v3 del sitio nuevo. Mientras diga PENDIENTE, App Check no se activa.
+const RECAPTCHA_SITE_KEY = 'PENDIENTE';
+let appCheck = null;
+if (!isLocal && RECAPTCHA_SITE_KEY !== 'PENDIENTE') {
+  try { appCheck = initializeAppCheck(app, { provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY), isTokenAutoRefreshEnabled: true }); }
+  catch(e) { console.error('[AppCheck]', e); }
+}
+const db = getDatabase(app), storage = getStorage(app), auth = getAuth(app);
+auth.languageCode = 'es';
+window.FB = { db, storage, auth, appCheck, getAppCheckToken, ref, push, onValue, remove, update, get, sRef, uploadBytes, getDownloadURL,
+  signInWithEmailAndPassword, sendPasswordResetEmail, signOut, EmailAuthProvider, reauthenticateWithCredential };
+let primera = true;
+onAuthStateChanged(auth, u => { if (primera) { primera = false; document.dispatchEvent(new CustomEvent('fb-auth', { detail: u })); } });
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// Finanzas_BP — pagos de tarjetas, propiedades, servicios y colegiaturas.
+// Solo para Alex y Gaby. Datos en la rama `pagos` de Firebase y el
+// catalogo (servicios y colegiaturas) en `pagos/_catalogo`.
+// ══════════════════════════════════════════════════════════════════
+// Las mismas dos cuentas que permiten las reglas de la base y de Storage.
+// El registro de cuentas nuevas está apagado en Firebase.
+const ACCESO = { 'alibombero@gmail.com': 'Alex', 'gpatron18@hotmail.com': 'Gaby' };
+const PROPIEDADES = ['Casa', 'Arthouse', 'Townsquare'];
+const EDIFICIOS = ['Arthouse', 'Townsquare']; // solo ellos tienen cuota de mantenimiento
+const TIPOS = {
+  tarjeta:       { icon: '💳', label: 'Tarjeta de crédito' },
+  servicio:      { icon: '💡', label: 'Servicio de una propiedad' },
+  mantenimiento: { icon: '🏢', label: 'Cuota Mantenimiento' },
+  colegiatura:   { icon: '🎓', label: 'Colegiatura' },
+  otro:          { icon: '📄', label: 'Otro' },
+};
+const FRECUENCIAS = { mensual: { label: 'Mensual', meses: 1 }, bimestral: { label: 'Bimestral', meses: 2 }, anual: { label: 'Anual', meses: 12 } };
+const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+let userName = '', vista = 'inicio';
+let PAGOS = {}, CATALOGO = {};
+let filtro = { prop: 'todas', cat: 'todas', metodo: 'todos' };
+let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
+let foto = null, fotoUrl = null;
+
+// ── utilidades ──
+const $ = id => document.getElementById(id);
+function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2800); }
+const fmt = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const soloDigitos = v => String(v || '').replace(/\D/g, '');
+const hoyDMY = () => fmtDMY(new Date());
+function fmtDMY(d) { return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+function fechaDeDMY(f) { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(f || '')); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; }
+function validarFecha(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || '').trim());
+  if (!m) return null;
+  const d = new Date(+m[3], +m[2]-1, +m[1]);
+  if (d.getMonth() !== +m[2]-1 || +m[3] < 2020 || +m[3] > 2100) return null;
+  return fmtDMY(d);
+}
+function validarMonto(s) {
+  const r = String(s || '').trim().replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(r)) return null;
+  const n = Math.round(parseFloat(r) * 100) / 100;
+  return n > 0 && n <= 10000000 ? n : null;
+}
+function normHora(h) {
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap])?\.?\s*m?\.?$/i.exec(String(h || '').trim());
+  if (!m) return '';
+  let hh = +m[1]; const ap = (m[3] || '').toLowerCase();
+  if (ap === 'p' && hh < 12) hh += 12;
+  if (ap === 'a' && hh === 12) hh = 0;
+  return hh > 23 || +m[2] > 59 ? '' : String(hh).padStart(2,'0') + ':' + m[2];
+}
+const emailKey = e => String(e || '').trim().toLowerCase().replace(/\./g, ',');
+function conTimeout(p, ms) { return Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('Sin respuesta de Firebase')), ms))]); }
+function tipoPago(p) {
+  const t = String((p && p.tipo_pago) || '').toLowerCase();
+  if (TIPOS[t]) return t;
+  if (t.startsWith('serv')) return 'servicio';
+  if (t.startsWith('mant')) return 'mantenimiento';
+  if (t.startsWith('cole')) return 'colegiatura';
+  return 'tarjeta';
+}
+function metodoPago(p) {
+  const m = String((p && (p.metodo || p.metodo_pago)) || '').toLowerCase();
+  if (m.startsWith('caj') || m.includes('efectivo') || m === 'atm') return 'cajero';
+  if (m.startsWith('trans') || m === 'spei') return 'transferencia';
+  return (p && (p.cuenta_origen || p.banco_origen)) ? 'transferencia' : '';
+}
+function normProp(v) { const s = String(v || '').toLowerCase(); return PROPIEDADES.find(p => s.includes(p.toLowerCase())) || ''; }
+function verImg(url) { $('viewerImg').src = url; $('viewer').classList.add('on'); }
+
+// ══ ACCESO ══
+document.addEventListener('fb-auth', e => { if (e.detail) entrarConCuenta(e.detail); else mostrarLogin(); });
+setTimeout(() => { if (!window.FB) mostrarLogin('📶 No se pudo cargar Firebase. Revisa tu internet.'); }, 8000);
+function mostrarLogin(msg) { $('app').classList.remove('on'); $('login').classList.remove('hidden'); $('lErr').textContent = msg || ''; }
+async function entrar() {
+  const email = $('lEmail').value.trim(), pass = $('lPass').value;
+  if (!email || !pass) { $('lErr').textContent = '⚠️ Escribe correo y contraseña'; return; }
+  $('lBtn').disabled = true; $('lErr').textContent = 'Entrando…';
+  try { const c = await FB.signInWithEmailAndPassword(FB.auth, email, pass); $('lPass').value = ''; await entrarConCuenta(c.user); }
+  catch(e) { $('lErr').textContent = /invalid|wrong|not-found/.test(e.code || '') ? '❌ Correo o contraseña incorrectos' : '❌ ' + (e.code || e.message); }
+  finally { $('lBtn').disabled = false; }
+}
+async function olvide() {
+  const email = $('lEmail').value.trim();
+  if (!email) { $('lErr').textContent = '⚠️ Escribe tu correo arriba'; return; }
+  try { await FB.sendPasswordResetEmail(FB.auth, email); $('lErr').textContent = '📧 Te enviamos un correo para cambiarla'; }
+  catch(e) { $('lErr').textContent = '❌ ' + (e.code || e.message); }
+}
+async function salir() { try { await FB.signOut(FB.auth); } catch(e) {} location.reload(); }
+async function entrarConCuenta(user) {
+  // Las cuentas las crea Alex desde la consola (el registro está apagado), así
+  // que no se pide confirmar el correo: el filtro es la lista ACCESO, igual que
+  // en las reglas de Firebase.
+  const nombre = ACCESO[String(user.email || '').toLowerCase()];
+  if (!nombre) {
+    await FB.signOut(FB.auth);
+    mostrarLogin('⛔ Finanzas_BP es solo para Alex y Gaby.');
+    return;
+  }
+  userName = nombre;
+  try { localStorage.setItem('fbp_email', user.email); localStorage.setItem('fbp_name', userName); } catch(e) {}
+  $('who').textContent = '👤 ' + userName;
+  $('login').classList.add('hidden');
+  $('app').classList.add('on');
+  escuchar();
+}
+
+// ══ DATOS ══
+// Lectura en vivo de `pagos`: lo que registre Gaby aparece al momento en el telefono de Alex.
+function escuchar() {
+  FB.onValue(FB.ref(FB.db, 'pagos'), snap => {
+    const v = snap.val() || {};
+    CATALOGO = v._catalogo || {};
+    PAGOS = {};
+    Object.entries(v).forEach(([k, p]) => { if (k !== '_catalogo' && p && p.cantidad > 0) PAGOS[k] = p; });
+    pintar();
+  }, err => {
+    $('main').innerHTML = `<div class="banner err">❌ No se pudieron leer los pagos: ${esc(err.message)}</div>`;
+  });
+}
+const listaPagos = () => Object.entries(PAGOS).map(([k, p]) => ({ _key: k, ...p }))
+  .sort((a, b) => (fechaDeDMY(b.fecha) || 0) - (fechaDeDMY(a.fecha) || 0) || (b.ts || 0) - (a.ts || 0));
+
+// ══ NAVEGACION ══
+function ir(v) { vista = v; filtro = { prop: 'todas', cat: 'todas', metodo: 'todos' }; editCat = null; pintar(); $('main').scrollTop = 0; }
+function setF(k, v) { filtro[k] = v; pintar(); }
+function pintar() {
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === vista));
+  const m = $('main');
+  if (vista === 'inicio') m.innerHTML = vInicio();
+  else if (vista === 'tarjetas') m.innerHTML = vPagos(p => tipoPago(p) === 'tarjeta', 'tarjetas');
+  else if (vista === 'propiedades') m.innerHTML = vPropiedades();
+  else if (vista === 'servicios') m.innerHTML = vCatalogo('servicio');
+  else if (vista === 'colegiaturas') m.innerHTML = vCatalogo('colegiatura');
+}
+const chip = (on, onclick, txt) => `<button class="chip${on ? ' on' : ''}" onclick="${onclick}">${txt}</button>`;
+const sumaMXN = arr => arr.filter(p => (p.moneda || 'MXN') === 'MXN').reduce((s, p) => s + (p.cantidad || 0), 0);
+
+// ── estado de un servicio / colegiatura del catalogo ──
+function estadoCat(s) {
+  const num = soloDigitos(s.numero);
+  const suyos = listaPagos().filter(p => num && soloDigitos(p.numero_servicio) === num)
+    .map(p => ({ p, f: fechaDeDMY(p.fecha) })).filter(x => x.f).sort((a, b) => b.f - a.f);
+  const ultimo = suyos[0] || null;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const meses = (FRECUENCIAS[s.frecuencia] || FRECUENCIAS.mensual).meses;
+  const dia = Math.min(Math.max(parseInt(s.dia_pago, 10) || 0, 0), 31);
+  let vence = null;
+  if (dia) vence = new Date(hoy.getFullYear(), hoy.getMonth(), Math.min(dia, new Date(hoy.getFullYear(), hoy.getMonth()+1, 0).getDate()));
+  let pagado = false;
+  if (ultimo) { const desde = new Date(vence || hoy); desde.setMonth(desde.getMonth() - meses); desde.setDate(desde.getDate() + 1); pagado = ultimo.f >= desde; }
+  let txt, cls, dias = null;
+  if (pagado) { txt = '✅ Pagado'; cls = 'g'; }
+  else if (!vence) { txt = '⚪ Sin día de pago'; cls = ''; }
+  else {
+    dias = Math.round((vence - hoy) / 86400000);
+    if (dias < 0) { txt = `🔴 Vencido hace ${-dias} día${dias === -1 ? '' : 's'}`; cls = 'r'; }
+    else if (dias <= 5) { txt = dias === 0 ? '🟡 Vence hoy' : `🟡 Vence en ${dias} día${dias === 1 ? '' : 's'}`; cls = 'o'; }
+    else { txt = `⚪ Vence el ${fmtDMY(vence)}`; cls = ''; }
+  }
+  return { ultimo: ultimo && ultimo.p, pagado, vence, dias, txt, cls };
+}
+const colorEstado = c => c === 'g' ? 'var(--green)' : c === 'r' ? 'var(--red)' : c === 'o' ? 'var(--orange)' : 'var(--text2)';
+
+// ══ VISTA: INICIO ══
+function vInicio() {
+  const items = Object.entries(CATALOGO).map(([id, s]) => ({ id, s, e: estadoCat(s) }));
+  const pend = items.filter(x => !x.e.pagado && x.e.vence).sort((a, b) => a.e.vence - b.e.vence);
+  const pagados = items.filter(x => x.e.pagado);
+  const hoy = new Date();
+  const delMes = listaPagos().filter(p => { const f = fechaDeDMY(p.fecha); return f && f.getMonth() === hoy.getMonth() && f.getFullYear() === hoy.getFullYear(); });
+  const porTipo = Object.keys(TIPOS).map(t => [t, delMes.filter(p => tipoPago(p) === t)]).filter(([, a]) => a.length);
+  const porPagar = pend.reduce((s, x) => s + (parseFloat(x.s.monto) || 0), 0);
+  let h = `<div class="stats">
+      <div><b>${fmt(sumaMXN(delMes))}</b><small>Pagado en ${MESES[hoy.getMonth()]}</small></div>
+      <div><b>${fmt(porPagar)}</b><small>Por pagar (aprox.)</small></div>
+      <div><b>${pend.filter(x => x.e.dias < 0).length}</b><small>Vencidos</small></div>
+    </div>`;
+  h += `<div class="card"><h3>📅 Próximos pagos</h3>`;
+  h += pend.length ? pend.map(({ id, s, e }) => `
+      <div style="padding:8px 0;border-top:1px solid var(--border)">
+        <div class="row"><div class="n">${s.categoria === 'colegiatura' ? '🎓 ' + esc(s.alumno || '') + ' · ' + esc(s.servicio || '') : '💡 ' + esc(s.servicio || '') + ' · ' + esc(s.propiedad || '')}</div>
+        ${s.monto ? `<div class="m">≈ ${fmt(s.monto)}</div>` : ''}</div>
+        <div class="row"><div class="estado" style="color:${colorEstado(e.cls)};flex:1">${e.txt}</div>
+        <button class="chip" onclick="registrarDeCatalogo('${esc(id)}')">💾 Registrar pago</button></div>
+      </div>`).join('')
+    : `<div class="empty" style="padding:10px">${items.length ? '🎉 Todo pagado por ahora' : 'Da de alta tus servicios y colegiaturas para ver aquí sus vencimientos.'}</div>`;
+  h += `</div>`;
+  if (pagados.length) h += `<div class="card"><h3>✅ Ya pagados este periodo (${pagados.length})</h3><div class="tags">${pagados.map(({ s }) => `<span class="tag g">${esc(s.categoria === 'colegiatura' ? (s.alumno || s.servicio) : s.servicio)} · ${esc(s.categoria === 'colegiatura' ? s.servicio : s.propiedad)}</span>`).join('')}</div></div>`;
+  h += `<div class="card"><h3>💰 Pagos de ${MESES[hoy.getMonth()]} ${hoy.getFullYear()}</h3>${porTipo.length
+      ? porTipo.map(([t, a]) => `<div class="row" style="padding:4px 0"><div class="n" style="font-weight:600">${TIPOS[t].icon} ${TIPOS[t].label} (${a.length})</div><div class="m">${fmt(sumaMXN(a))}</div></div>`).join('')
+      : '<div class="empty" style="padding:10px">Sin pagos registrados este mes</div>'}</div>`;
+  return h;
+}
+
+// ══ VISTA: LISTA DE PAGOS (tarjetas / propiedades) ══
+function filasMetodo(arr) {
+  const t = arr.filter(p => metodoPago(p) === 'transferencia'), c = arr.filter(p => metodoPago(p) === 'cajero');
+  return `<div class="chips">${chip(filtro.metodo === 'todos', "setF('metodo','todos')", 'Cualquier método')}${chip(filtro.metodo === 'transferencia', "setF('metodo','transferencia')", '🔁 Transferencia ' + fmt(sumaMXN(t)))}${chip(filtro.metodo === 'cajero', "setF('metodo','cajero')", '🏧 Cajero ' + fmt(sumaMXN(c)))}</div>`;
+}
+function aplicarMetodo(arr) {
+  if (filtro.metodo === 'transferencia') return arr.filter(p => metodoPago(p) === 'transferencia');
+  if (filtro.metodo === 'cajero') return arr.filter(p => metodoPago(p) === 'cajero');
+  return arr;
+}
+function vPagos(cond, cual) {
+  let arr = listaPagos().filter(cond);
+  let h = filasMetodo(arr);
+  arr = aplicarMetodo(arr);
+  h += `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN</small></div><div><b>${new Set(arr.map(p => p.tarjeta || p.banco)).size}</b><small>Tarjetas</small></div></div>`;
+  return h + listaHtml(arr, '💳', 'Sin pagos de tarjeta todavía.<br>Toca ＋ para registrar uno.');
+}
+function vPropiedades() {
+  let arr = listaPagos().filter(p => ['servicio', 'mantenimiento'].includes(tipoPago(p)));
+  let h = `<div class="chips">${chip(filtro.prop === 'todas', "setF('prop','todas')", 'Todas ' + fmt(sumaMXN(arr)))}`
+    + PROPIEDADES.map(pr => chip(filtro.prop === pr, `setF('prop','${pr}')`, `${pr === 'Casa' ? '🏡' : '🏢'} ${pr} ${fmt(sumaMXN(arr.filter(p => p.departamento === pr)))}`)).join('') + `</div>`;
+  if (filtro.prop !== 'todas') arr = arr.filter(p => p.departamento === filtro.prop);
+  const serv = arr.filter(p => tipoPago(p) === 'servicio'), mant = arr.filter(p => tipoPago(p) === 'mantenimiento');
+  h += `<div class="chips">${chip(filtro.cat === 'todas', "setF('cat','todas')", 'Todo')}${chip(filtro.cat === 'servicio', "setF('cat','servicio')", '💡 Servicios ' + fmt(sumaMXN(serv)))}${filtro.prop === 'Casa' ? '' : chip(filtro.cat === 'mantenimiento', "setF('cat','mantenimiento')", '🏢 Cuota Mantenimiento ' + fmt(sumaMXN(mant)))}</div>`;
+  if (filtro.cat === 'servicio') arr = serv; else if (filtro.cat === 'mantenimiento') arr = mant;
+  h += filasMetodo(arr);
+  arr = aplicarMetodo(arr);
+  h += `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN</small></div><div><b>${new Set(arr.map(p => p.servicio)).size}</b><small>Conceptos</small></div></div>`;
+  return h + listaHtml(arr, '🏠', 'Sin pagos de propiedades en esta vista.');
+}
+function tituloPago(p) {
+  const t = tipoPago(p), ic = TIPOS[t].icon;
+  if (t === 'tarjeta') return `${ic} ${esc(p.banco || 'Tarjeta')}${p.tarjeta ? ' ****' + esc(p.tarjeta) : ''}`;
+  if (t === 'mantenimiento') return `${ic} Cuota Mantenimiento ${esc(p.departamento || '')}`;
+  if (t === 'colegiatura') return `${ic} ${esc(p.alumno || 'Colegiatura')} · ${esc(p.servicio || '')}`;
+  return `${ic} ${esc(p.servicio || TIPOS[t].label)}`;
+}
+function listaHtml(arr, icono, vacio) {
+  if (!arr.length) return `<div class="empty"><span>${icono}</span>${vacio}</div>`;
+  let h = '', dia = '';
+  arr.forEach(p => {
+    if (p.fecha !== dia) { dia = p.fecha; h += `<div class="day">📅 ${esc(dia || 'Sin fecha')}</div>`; }
+    const mt = metodoPago(p);
+    h += `<div class="card">
+      <div class="row"><div class="n">${tituloPago(p)}</div><div class="m">${esc(p.moneda || 'MXN')} ${fmt(p.cantidad)}</div></div>
+      <div class="tags">
+        ${mt === 'cajero' ? '<span class="tag o">🏧 Cajero (efectivo)</span>' : mt === 'transferencia' ? '<span class="tag">🔁 Transferencia</span>' : '<span class="tag r">❔ Sin método</span>'}
+        ${tipoPago(p) === 'servicio' && p.departamento ? `<span class="tag">${p.departamento === 'Casa' ? '🏡' : '🏢'} ${esc(p.departamento)}</span>` : ''}
+        ${tipoPago(p) === 'mantenimiento' && p.servicio ? `<span class="tag">${esc(p.servicio)}</span>` : ''}
+        ${p.periodo ? `<span class="tag">🗓 ${esc(p.periodo)}</span>` : ''}
+        ${p.numero_servicio ? `<span class="tag g">No. ${esc(p.numero_servicio)}</span>` : ''}
+        ${p.banco_origen || p.cuenta_origen ? `<span class="tag g">Desde ${esc(p.banco_origen || '')}${p.cuenta_origen ? ' ****' + esc(p.cuenta_origen) : ''}</span>` : ''}
+        ${p.hora ? `<span class="tag">🕐 ${esc(p.hora)}</span>` : ''}
+        ${p.folio ? `<span class="tag g">Ref. ${esc(p.folio)}</span>` : ''}
+        ${p.concepto ? `<span class="tag">${esc(p.concepto)}</span>` : ''}
+        ${p.who ? `<span class="tag">👤 ${esc(p.who)}</span>` : ''}
+      </div>
+      ${p.imgUrl ? `<div class="comp" onclick="verImg('${esc(p.imgUrl)}')"><img src="${esc(p.imgUrl)}" alt="" loading="lazy" onerror="this.style.height='50px';this.nextElementSibling.textContent='⚠️ No se pudo cargar la imagen'"><span>🧾 Ver comprobante completo</span></div>` : ''}
+      <div class="acts">
+        <button onclick="cambiarMetodo('${esc(p._key)}','${mt === 'cajero' ? 'transferencia' : 'cajero'}')">${mt === 'cajero' ? '🔁 Marcar transferencia' : '🏧 Marcar cajero'}</button>
+        <button class="del" onclick="borrarPago('${esc(p._key)}')">🗑</button>
+      </div>
+    </div>`;
+  });
+  return h;
+}
+async function cambiarMetodo(key, m) {
+  try { await FB.update(FB.ref(FB.db), { ['pagos/' + key + '/metodo']: m }); toast('✅ Método actualizado'); }
+  catch(e) { toast('❌ ' + e.message); }
+}
+async function borrarPago(key) {
+  const p = PAGOS[key]; if (!p) return;
+  const pass = window.prompt(`Para eliminar el pago de ${fmt(p.cantidad)} escribe tu contraseña:`);
+  if (!pass) return;
+  try {
+    const u = FB.auth.currentUser;
+    await FB.reauthenticateWithCredential(u, FB.EmailAuthProvider.credential(u.email, pass));
+    await FB.remove(FB.ref(FB.db, 'pagos/' + key));
+    toast('🗑 Pago eliminado');
+  } catch(e) { toast(/invalid|wrong/.test(e.code || '') ? '❌ Contraseña incorrecta' : '❌ ' + (e.code || e.message)); }
+}
+
+// ══ VISTA: CATÁLOGO (servicios y colegiaturas) ══
+function vCatalogo(categoria) {
+  const esCole = categoria === 'colegiatura';
+  let items = Object.entries(CATALOGO).map(([id, s]) => ({ id, s })).filter(x => (x.s.categoria || 'servicio') === categoria);
+  let h = '';
+  if (!esCole) {
+    h += `<div class="chips">${chip(filtro.prop === 'todas', "setF('prop','todas')", 'Todas')}`
+      + PROPIEDADES.map(pr => chip(filtro.prop === pr, `setF('prop','${pr}')`, `${pr === 'Casa' ? '🏡' : '🏢'} ${pr} (${items.filter(x => x.s.propiedad === pr).length})`)).join('') + `</div>`;
+    if (filtro.prop !== 'todas') items = items.filter(x => x.s.propiedad === filtro.prop);
+  }
+  items = items.map(x => ({ ...x, e: estadoCat(x.s) }))
+    .sort((a, b) => esCole ? (a.s.alumno || '').localeCompare(b.s.alumno || '') : (a.s.propiedad || '').localeCompare(b.s.propiedad || '') || (a.s.servicio || '').localeCompare(b.s.servicio || ''));
+  const pend = items.filter(x => !x.e.pagado && x.e.vence);
+  h += `<div class="stats"><div><b>${items.length}</b><small>${esCole ? 'Colegiaturas' : 'Servicios'}</small></div><div><b>${fmt(pend.reduce((s, x) => s + (parseFloat(x.s.monto) || 0), 0))}</b><small>Por pagar (aprox.)</small></div><div><b>${items.filter(x => x.e.dias < 0 && !x.e.pagado).length}</b><small>Vencidos</small></div></div>`;
+  h += editCat === 'nuevo-' + categoria ? formCat({ categoria, propiedad: PROPIEDADES.includes(filtro.prop) ? filtro.prop : '' })
+    : `<button class="btn-lite" onclick="editCat='nuevo-${categoria}';pintar()">➕ Agregar ${esCole ? 'colegiatura' : 'servicio'}</button>`;
+  if (!items.length) return h + `<div class="empty"><span>${esCole ? '🎓' : '🧾'}</span>${esCole ? 'Sin colegiaturas dadas de alta.' : 'Sin servicios dados de alta.<br>Agrega tu línea de Telmex, CFE, agua…'}</div>`;
+  h += items.map(({ id, s, e }) => `
+    <div class="card">
+      <div class="row"><div class="n">${esCole ? '🎓 ' + esc(s.alumno || 'Alumno') : '💡 ' + esc(s.servicio || 'Servicio')} <span style="font-weight:500;color:var(--text2)">· ${esCole ? esc(s.servicio || '') : (s.propiedad === 'Casa' ? '🏡 ' : '🏢 ') + esc(s.propiedad || '—')}</span></div>
+      ${s.monto ? `<div class="m">≈ ${fmt(s.monto)}</div>` : ''}</div>
+      <div class="estado" style="color:${colorEstado(e.cls)}">${e.txt}</div>
+      <div class="tags">
+        ${s.numero ? `<span class="tag g">${esCole ? 'Ref.' : 'No.'} ${esc(s.numero)}</span>` : ''}
+        ${s.dia_pago ? `<span class="tag">📅 Día ${esc(s.dia_pago)}</span>` : ''}
+        <span class="tag">${(FRECUENCIAS[s.frecuencia] || FRECUENCIAS.mensual).label}</span>
+        ${s.titular ? `<span class="tag">👤 ${esc(s.titular)}</span>` : ''}
+        ${s.como_pago ? `<span class="tag">💳 ${esc(s.como_pago)}</span>` : ''}
+        ${e.ultimo ? `<span class="tag g">Último pago ${esc(e.ultimo.fecha)} · ${fmt(e.ultimo.cantidad)}</span>` : '<span class="tag o">Sin pagos registrados</span>'}
+      </div>
+      ${s.notas ? `<div style="font-size:12px;color:var(--text2);margin-top:6px">📝 ${esc(s.notas)}</div>` : ''}
+      <div class="acts">
+        <button onclick="registrarDeCatalogo('${esc(id)}')">💾 Registrar pago</button>
+        <button onclick="editCat='${esc(id)}';pintar()" style="flex:0 0 70px">✏️</button>
+        <button class="del" onclick="borrarCat('${esc(id)}')">🗑</button>
+      </div>
+      ${editCat === id ? formCat({ _id: id, ...s }) : ''}
+    </div>`).join('');
+  return h;
+}
+function formCat(s) {
+  const esCole = s.categoria === 'colegiatura';
+  const v = x => esc(x == null ? '' : x);
+  const opt = (val, txt, sel) => `<option value="${esc(val)}" ${sel ? 'selected' : ''}>${esc(txt)}</option>`;
+  return `<div class="card" style="background:var(--surface2);margin-top:8px">
+    <b>${s._id ? '✏️ Editar' : '➕ Nueva ' + (esCole ? 'colegiatura' : 'línea / servicio')}</b>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      ${esCole ? `
+      <div class="g2"><div class="f"><label>Alumno *</label><input id="c_alumno" value="${v(s.alumno)}" placeholder="Nombre"></div>
+      <div class="f"><label>Escuela *</label><input id="c_servicio" value="${v(s.servicio)}" placeholder="Colegio…"></div></div>
+      <div class="g2"><div class="f"><label>Referencia / matrícula *</label><input id="c_numero" value="${v(s.numero)}" placeholder="Matrícula"></div>
+      <div class="f"><label>Día de pago</label><input id="c_dia" value="${v(s.dia_pago)}" type="number" min="1" max="31" inputmode="numeric" placeholder="10"></div></div>`
+      : `
+      <div class="g2"><div class="f"><label>Servicio *</label><input id="c_servicio" value="${v(s.servicio)}" placeholder="Telmex, CFE…" list="c_sug"></div>
+      <div class="f"><label>Propiedad *</label><select id="c_propiedad">${opt('', '— elegir —', !s.propiedad)}${PROPIEDADES.map(p => opt(p, p, s.propiedad === p)).join('')}</select></div></div>
+      <datalist id="c_sug"><option>Telmex</option><option>CFE</option><option>Agua</option><option>Izzi</option><option>Totalplay</option><option>Telcel</option><option>Gas</option><option>Predial</option></datalist>
+      <div class="g2"><div class="f"><label>No. servicio / línea *</label><input id="c_numero" value="${v(s.numero)}" inputmode="numeric" placeholder="9991679401"></div>
+      <div class="f"><label>Día de pago</label><input id="c_dia" value="${v(s.dia_pago)}" type="number" min="1" max="31" inputmode="numeric" placeholder="21"></div></div>`}
+      <div class="g2"><div class="f"><label>Frecuencia</label><select id="c_frecuencia">${Object.entries(FRECUENCIAS).map(([k, f]) => opt(k, f.label, (s.frecuencia || 'mensual') === k)).join('')}</select></div>
+      <div class="f"><label>Monto aprox.</label><input id="c_monto" value="${v(s.monto)}" type="number" inputmode="decimal" placeholder="0.00"></div></div>
+      <div class="g2"><div class="f"><label>Titular</label><input id="c_titular" value="${v(s.titular)}" placeholder="A nombre de…"></div>
+      <div class="f"><label>Cómo se paga</label><input id="c_comopago" value="${v(s.como_pago)}" placeholder="App, domiciliado…"></div></div>
+      <div class="f"><label>Notas</label><input id="c_notas" value="${v(s.notas)}" placeholder="Paquete, grado, referencia…"></div>
+      <div class="acts"><button onclick="guardarCat('${v(s._id || '')}','${esCole ? 'colegiatura' : 'servicio'}')">💾 Guardar</button><button class="del" onclick="editCat=null;pintar()">✕</button></div>
+    </div></div>`;
+}
+async function guardarCat(id, categoria) {
+  const val = x => ($(x) ? $(x).value : '').trim();
+  const esCole = categoria === 'colegiatura';
+  const servicio = val('c_servicio').slice(0, 60), numero = val('c_numero').slice(0, 40);
+  const propiedad = esCole ? '' : val('c_propiedad'), alumno = esCole ? val('c_alumno').slice(0, 60) : '';
+  if (esCole && !alumno) return toast('⚠️ Escribe el alumno');
+  if (!servicio) return toast(esCole ? '⚠️ Escribe la escuela' : '⚠️ Escribe el servicio');
+  if (!esCole && !PROPIEDADES.includes(propiedad)) return toast('⚠️ Elige la propiedad');
+  if (!numero) return toast(esCole ? '⚠️ Escribe la referencia o matrícula' : '⚠️ Escribe el número de servicio');
+  const dia = val('c_dia');
+  if (dia && !(+dia >= 1 && +dia <= 31)) return toast('⚠️ Día de pago entre 1 y 31');
+  const monto = val('c_monto');
+  if (monto && !(parseFloat(monto) >= 0)) return toast('⚠️ Monto inválido');
+  const repetido = Object.entries(CATALOGO).find(([k, s]) => k !== id && soloDigitos(s.numero) && soloDigitos(s.numero) === soloDigitos(numero));
+  if (repetido) return toast('⚠️ Ese número ya está dado de alta (' + repetido[1].servicio + ')');
+  const data = { categoria, servicio, propiedad, alumno, numero, dia_pago: dia ? parseInt(dia, 10) : null,
+    frecuencia: FRECUENCIAS[val('c_frecuencia')] ? val('c_frecuencia') : 'mensual',
+    monto: monto ? Math.round(parseFloat(monto) * 100) / 100 : null,
+    titular: val('c_titular').slice(0, 80), como_pago: val('c_comopago').slice(0, 80), notas: val('c_notas').slice(0, 300),
+    actualizado: Date.now(), por: userName };
+  try {
+    if (id) await FB.update(FB.ref(FB.db), Object.fromEntries(Object.entries(data).map(([k, v]) => ['pagos/_catalogo/' + id + '/' + k, v])));
+    else await FB.push(FB.ref(FB.db, 'pagos/_catalogo'), data);
+    editCat = null; toast('✅ Guardado');
+  } catch(e) { toast('❌ ' + (/permission/i.test(e.message) ? 'Firebase no permite guardar (reglas)' : e.message)); }
+}
+async function borrarCat(id) {
+  const s = CATALOGO[id];
+  if (!s || !confirm(`¿Quitar ${s.alumno || s.servicio} (${s.numero}) del catálogo? Los pagos ya registrados no se borran.`)) return;
+  try { await FB.remove(FB.ref(FB.db, 'pagos/_catalogo/' + id)); toast('🗑 Quitado'); } catch(e) { toast('❌ ' + e.message); }
+}
+
+// ══ REGISTRAR PAGO ══
+function abrirRegistro(datos) {
+  foto = null; fotoUrl = null;
+  $('sheetBox').innerHTML = `
+    <div class="hd"><b>➕ Registrar pago</b><button onclick="cerrarRegistro()">✕</button></div>
+    <div class="g2"><button class="btn" onclick="$('camIn').click()">📷 Cámara</button><button class="btn" onclick="$('galIn').click()">🖼 Galería</button></div>
+    <div id="rFoto"></div><div id="rMsg"></div>
+    ${formPago(datos || {})}`;
+  $('sheet').classList.add('on');
+  actualizarCampos();
+}
+function cerrarRegistro() { $('sheet').classList.remove('on'); }
+function formPago(d) {
+  const opt = (val, txt, sel) => `<option value="${esc(val)}" ${sel ? 'selected' : ''}>${esc(txt)}</option>`;
+  const v = x => esc(x == null ? '' : x);
+  const t = d.tipo_pago ? tipoPago(d) : 'tarjeta';
+  return `<div style="display:flex;flex-direction:column;gap:10px" id="rForm">
+    <div class="f"><label>Tipo de pago *</label><select id="p_tipo" onchange="actualizarCampos()">${Object.entries(TIPOS).map(([k, x]) => opt(k, x.icon + ' ' + x.label, t === k)).join('')}</select></div>
+    <div id="w_serv">
+      <div class="g2"><div class="f"><label id="l_serv">Servicio *</label><input id="p_servicio" value="${v(d.servicio)}" placeholder="CFE, Telmex…"></div>
+      <div class="f" id="w_alumno"><label>Alumno *</label><input id="p_alumno" value="${v(d.alumno)}" placeholder="Nombre"></div></div>
+      <div class="g2" style="margin-top:10px"><div class="f"><label id="l_num">No. de servicio</label><input id="p_num" value="${v(d.numero_servicio)}" onchange="autocompletar(true)"></div>
+      <div class="f"><label>Periodo</label><input id="p_periodo" value="${v(d.periodo)}" placeholder="Nov 2026"></div></div>
+      <div class="f" style="margin-top:10px"><label>Fecha límite</label><input id="p_vence" value="${v(d.fecha_limite || d.vence)}" placeholder="DD/MM/YYYY"></div>
+    </div>
+    <div class="f" id="w_prop"><label>Propiedad *</label><select id="p_prop">${opt('', '— elegir —', !d.departamento)}${PROPIEDADES.map(p => opt(p, p, normProp(d.departamento) === p)).join('')}</select></div>
+    <div class="g2"><div class="f"><label>Fecha *</label><input id="p_fecha" value="${v(d.fecha || hoyDMY())}" placeholder="DD/MM/YYYY"></div>
+    <div class="f"><label>Hora</label><input id="p_hora" type="time" value="${v(normHora(d.hora))}"></div></div>
+    <div class="g2"><div class="f"><label>Cantidad *</label><input id="p_total" type="number" inputmode="decimal" value="${v(parseFloat(d.total) > 0 ? d.total : '')}" placeholder="0.00"></div>
+    <div class="f"><label>Método *</label><select id="p_metodo">${opt('transferencia', '🔁 Transferencia', metodoPago(d) !== 'cajero')}${opt('cajero', '🏧 Cajero (efectivo)', metodoPago(d) === 'cajero')}</select></div></div>
+    <div class="g2"><div class="f"><label>Moneda</label><select id="p_moneda">${['MXN','USD','EUR','GBP'].map(m => opt(m, m, (d.moneda || 'MXN') === m)).join('')}</select></div>
+    <div class="f"><label id="l_banco">Banco destino</label><input id="p_banco" value="${v(d.banco)}" placeholder="Banco que recibe"></div></div>
+    <div class="g2"><div class="f"><label>Banco origen</label><input id="p_borigen" value="${v(d.banco_origen)}"></div>
+    <div class="f"><label>Cuenta origen (últ. 4)</label><input id="p_corigen" value="${v(d.cuenta_origen)}" inputmode="numeric"></div></div>
+    <div class="g2"><div class="f" id="w_tarjeta"><label>Tarjeta destino (últ. 4)</label><input id="p_tarjeta" value="${v(d.tarjeta_pagada || d.tarjeta)}" inputmode="numeric"></div>
+    <div class="f"><label>Autorización / Ref.</label><input id="p_folio" value="${v(d.folio)}"></div></div>
+    <div class="f"><label>Concepto</label><input id="p_concepto" value="${v(d.concepto)}"></div>
+    <button class="btn" id="btnGuardar" onclick="guardarPago()">💾 Guardar pago</button>
+  </div>`;
+}
+function actualizarCampos() {
+  const t = $('p_tipo').value, show = (id, on) => { if ($(id)) $(id).style.display = on ? '' : 'none'; };
+  show('w_serv', t !== 'tarjeta');
+  show('w_alumno', t === 'colegiatura');
+  show('w_prop', t === 'servicio' || t === 'mantenimiento');
+  show('w_tarjeta', t === 'tarjeta');
+  $('l_serv').textContent = t === 'colegiatura' ? 'Escuela *' : t === 'mantenimiento' ? 'A quién se pagó' : 'Servicio *';
+  $('l_num').textContent = t === 'colegiatura' ? 'Referencia / matrícula' : 'No. de servicio';
+  $('l_banco').textContent = t === 'tarjeta' ? 'Banco de la tarjeta *' : 'Banco destino';
+  // La cuota de mantenimiento es del edificio: Casa no tiene
+  const casa = [...$('p_prop').options].find(o => o.value === 'Casa');
+  if (casa) { casa.disabled = casa.hidden = t === 'mantenimiento'; if (t === 'mantenimiento' && $('p_prop').value === 'Casa') $('p_prop').value = ''; }
+}
+// Llena servicio/propiedad/alumno con el catalogo (o el ultimo pago) por numero
+function autocompletar(avisar) {
+  const num = soloDigitos($('p_num') && $('p_num').value);
+  if (!num || num.length < 4) return;
+  const c = Object.values(CATALOGO).find(s => soloDigitos(s.numero) === num);
+  const prev = c ? null : listaPagos().find(p => soloDigitos(p.numero_servicio) === num);
+  const src = c ? { tipo: c.categoria === 'colegiatura' ? 'colegiatura' : 'servicio', servicio: c.servicio, prop: c.propiedad, alumno: c.alumno }
+    : prev ? { tipo: tipoPago(prev), servicio: prev.servicio, prop: prev.departamento, alumno: prev.alumno } : null;
+  if (!src) return;
+  if ($('p_tipo').value === 'tarjeta' || $('p_tipo').value === 'otro') { $('p_tipo').value = src.tipo; actualizarCampos(); }
+  if (!$('p_servicio').value && src.servicio) $('p_servicio').value = src.servicio;
+  if (!$('p_prop').value && src.prop) $('p_prop').value = src.prop;
+  if (!$('p_alumno').value && src.alumno) $('p_alumno').value = src.alumno;
+  if (avisar !== false) toast(`🧾 Reconocido: ${src.alumno ? src.alumno + ' · ' : ''}${src.servicio || ''}${src.prop ? ' · ' + src.prop : ''}`);
+}
+function registrarDeCatalogo(id) {
+  const s = CATALOGO[id]; if (!s) return;
+  const e = estadoCat(s), h = new Date();
+  abrirRegistro({ tipo_pago: s.categoria === 'colegiatura' ? 'colegiatura' : 'servicio', servicio: s.servicio, alumno: s.alumno,
+    numero_servicio: s.numero, departamento: s.propiedad, total: s.monto || '', periodo: MESES[h.getMonth()] + ' ' + h.getFullYear(),
+    vence: e.vence ? fmtDMY(e.vence) : '' });
+  $('rMsg').innerHTML = `<div class="banner">${s.categoria === 'colegiatura' ? '🎓 ' + esc(s.alumno) + ' · ' + esc(s.servicio) : '💡 ' + esc(s.servicio) + ' · ' + esc(s.propiedad)} — agrega la foto del comprobante si la tienes</div>`;
+}
+
+// ── foto + IA ──
+function compressImage(dataUrl, maxBytes, quality) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const intento = maxDim => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) { const r = Math.min(maxDim / w, maxDim / h); w = Math.round(w * r); h = Math.round(h * r); }
+        const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+        let q = quality, out;
+        do { out = c.toDataURL('image/jpeg', q); q -= 0.1; } while (Math.round((out.length - 22) * 3 / 4) > maxBytes && q >= 0.3);
+        return out;
+      };
+      let r = intento(1600);
+      if (Math.round((r.length - 22) * 3 / 4) > maxBytes) r = intento(1200);
+      if (Math.round((r.length - 22) * 3 / 4) > maxBytes) r = intento(900);
+      resolve(r);
+    };
+    img.src = dataUrl;
+  });
+}
+function onFoto(input) {
+  const file = input.files[0]; input.value = ''; if (!file) return;
+  const rd = new FileReader();
+  rd.onload = async e => {
+    const comp = await compressImage(e.target.result, 1024 * 1024, 0.8);
+    foto = comp.split(',')[1]; fotoUrl = null;
+    $('rFoto').innerHTML = `<img class="prev" src="${comp}" alt="">`;
+    $('rMsg').innerHTML = '<div class="banner">🤖 Leyendo el comprobante…</div>';
+    leerConIA(foto);
+  };
+  rd.readAsDataURL(file);
+}
+async function leerConIA(b64) {
+  const prompt = `Analiza este comprobante de PAGO y responde ÚNICAMENTE con JSON válido, sin markdown.
+Tipos (tipo_pago):
+- "tarjeta": pago a una tarjeta de crédito (PAGO DE TARJETA, PAGO APLICADO, abono a tarjeta) o una transferencia/SPEI enviada desde la app del banco para pagar una tarjeta.
+- "servicio": recibo o pago de CFE (luz), agua (JAPAY, CONAGUA u organismo de agua), teléfono/internet/cable (Telmex, Telcel, AT&T, Izzi, Totalplay, Megacable), gas, predial.
+- "mantenimiento": cuota de mantenimiento o administración de edificio/condominio (Arthouse, Townsquare).
+- "colegiatura": pago a escuela, colegio, universidad (colegiatura, inscripción, matrícula).
+- "otro": cualquier otro pago.
+Responde con este JSON exacto (OMITE campos vacíos, JSON compacto en una línea):
+{"tipo_pago":"","fecha":"DD/MM/YYYY con año de 4 dígitos (13/nov/26 -> 13/11/2026)","hora":"HH:MM 24h","total":"número sin comas","moneda":"MXN o USD o EUR o GBP","metodo_pago":"transferencia (captura de app/banca en línea/SPEI) o cajero (ticket de cajero/practicaja, efectivo)","banco":"banco DESTINO o de la tarjeta","banco_origen":"banco desde el que salió el dinero","cuenta_origen":"últimos 4 de la cuenta origen","tarjeta_pagada":"últimos 4 de la tarjeta/cuenta destino","servicio":"empresa o escuela que recibe (CFE, Telmex, Agua, Colegio X, Administración Arthouse)","numero_servicio":"número de servicio, línea telefónica, contrato o matrícula","periodo":"periodo pagado ej Nov 2026","fecha_limite":"DD/MM/YYYY si aparece","departamento":"Casa, Arthouse o Townsquare si aparece","alumno":"nombre del alumno si es colegiatura","folio":"autorización, folio o referencia","concepto":"concepto"}`;
+  try {
+    const body = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt } ] }] });
+    // claude-proxy solo atiende a miembros con sesión (token de Auth + App Check)
+    const headers = { 'Content-Type': 'application/json' };
+    const u = FB.auth.currentUser;
+    if (u) { try { headers['Authorization'] = 'Bearer ' + await u.getIdToken(); } catch(e) { console.warn('[IA] sin token de sesión', e); } }
+    if (FB.appCheck) {
+      try { const t = await FB.getAppCheckToken(FB.appCheck, false); if (t && t.token) headers['X-Firebase-AppCheck'] = t.token; }
+      catch(e) { console.warn('[IA] sin token de App Check', e); }
+    }
+    let res;
+    for (let i = 1; ; i++) {
+      try { res = await fetch('/.netlify/functions/claude-proxy', { method: 'POST', headers, body }); break; }
+      catch(e) { if (i >= 2) throw e; await new Promise(r => setTimeout(r, 1500)); }
+    }
+    if (!res.ok) throw new Error('IA respondió ' + res.status);
+    const data = await res.json();
+    const txt = ((data.content || []).find(b => b.type === 'text') || {}).text || '';
+    const clean = txt.replace(/```json|```/gi, '');
+    const d = JSON.parse(clean.substring(clean.indexOf('{'), clean.lastIndexOf('}') + 1));
+    const fotoHtml = $('rFoto').innerHTML;
+    $('rForm').outerHTML = formPago(d);
+    $('rFoto').innerHTML = fotoHtml;
+    actualizarCampos();
+    autocompletar(false);
+    $('rMsg').innerHTML = `<div class="banner">✅ ${TIPOS[tipoPago(d)].icon} ${TIPOS[tipoPago(d)].label} detectado — revisa y guarda</div>`;
+  } catch(e) {
+    console.warn('[IA]', e);
+    $('rMsg').innerHTML = `<div class="banner err">⚠️ No se pudo leer con IA (${esc(e.message)}). Llena los datos a mano.</div>`;
+  }
+}
+function b64toBlob(b64, mime) { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return new Blob([a], { type: mime }); }
+async function subirFoto() {
+  if (fotoUrl) return fotoUrl;
+  // Carpeta pagos/ del Storage propio (storage.rules: solo Alex y Gaby, solo imágenes)
+  const r = FB.sRef(FB.storage, `pagos/${Date.now()}_${userName}.jpg`);
+  await Promise.race([FB.uploadBytes(r, b64toBlob(foto, 'image/jpeg')), new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout subiendo imagen')), 20000))]);
+  fotoUrl = await FB.getDownloadURL(r);
+  return fotoUrl;
+}
+async function guardarPago() {
+  const val = x => ($(x) ? $(x).value : '').trim();
+  const tipo = val('p_tipo');
+  const cantidad = validarMonto(val('p_total'));
+  if (!cantidad) return toast('⚠️ Escribe la cantidad');
+  const fecha = validarFecha(val('p_fecha'));
+  if (!fecha) return toast('⚠️ Fecha inválida (DD/MM/YYYY)');
+  const servicio = val('p_servicio').slice(0, 80), prop = val('p_prop'), alumno = val('p_alumno').slice(0, 60);
+  if (tipo === 'tarjeta' && !val('p_banco')) return toast('⚠️ Escribe el banco de la tarjeta');
+  if ((tipo === 'servicio' || tipo === 'colegiatura') && !servicio) return toast(tipo === 'colegiatura' ? '⚠️ Escribe la escuela' : '⚠️ Escribe el servicio');
+  if (tipo === 'colegiatura' && !alumno) return toast('⚠️ Escribe el alumno');
+  if ((tipo === 'servicio' || tipo === 'mantenimiento') && !PROPIEDADES.includes(prop)) return toast('⚠️ Elige la propiedad');
+  if (tipo === 'mantenimiento' && !EDIFICIOS.includes(prop)) return toast('⚠️ La cuota de mantenimiento es solo de Arthouse o Townsquare');
+  let vence = '';
+  if (tipo !== 'tarjeta' && val('p_vence')) { vence = validarFecha(val('p_vence')); if (!vence) return toast('⚠️ Fecha límite inválida'); }
+  const f = fechaDeDMY(fecha), hoy = new Date();
+  if (Math.abs(f - hoy) > 7 * 86400000 && !confirm(`La fecha del pago es ${fecha} (hoy es ${hoyDMY()}). ¿Guardarlo así?`)) return;
+  const btn = $('btnGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  const pago = {
+    ts: Date.now(), who: userName, tipo_pago: tipo, fecha, cantidad, moneda: val('p_moneda') || 'MXN',
+    metodo: val('p_metodo') === 'cajero' ? 'cajero' : 'transferencia',
+    banco: val('p_banco').slice(0, 80), banco_origen: val('p_borigen').slice(0, 80), cuenta_origen: val('p_corigen').slice(0, 20),
+    tarjeta: tipo === 'tarjeta' ? val('p_tarjeta').slice(0, 20) : '',
+    servicio: tipo === 'tarjeta' ? '' : servicio, alumno: tipo === 'colegiatura' ? alumno : '',
+    departamento: (tipo === 'servicio' || tipo === 'mantenimiento') ? prop : '',
+    numero_servicio: tipo === 'tarjeta' ? '' : val('p_num').slice(0, 40), periodo: val('p_periodo').slice(0, 40), vence,
+    hora: normHora(val('p_hora')), folio: val('p_folio').slice(0, 40), concepto: val('p_concepto').slice(0, 200),
+  };
+  try {
+    if (foto) { btn.textContent = 'Subiendo imagen…'; try { pago.imgUrl = await subirFoto(); } catch(e) { toast('⚠️ ' + e.message + ' — se guarda sin imagen'); } }
+    await FB.push(FB.ref(FB.db, 'pagos'), pago);
+    toast('✅ Pago guardado');
+    cerrarRegistro();
+    vista = tipo === 'tarjeta' ? 'tarjetas' : tipo === 'colegiatura' ? 'colegiaturas' : (tipo === 'otro' ? 'inicio' : 'propiedades');
+    if (tipo === 'colegiatura') vista = 'colegiaturas';
+    pintar();
+  } catch(e) {
+    toast('❌ ' + (/permission/i.test(e.message) ? 'Firebase no permite guardar en "pagos" (reglas)' : e.message));
+  } finally { btn.disabled = false; btn.textContent = '💾 Guardar pago'; }
+}
+</script>
+</body>
+</html>

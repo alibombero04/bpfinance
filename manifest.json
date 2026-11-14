@@ -1,0 +1,12 @@
+{
+  "name": "Finanzas_BP",
+  "short_name": "Finanzas_BP",
+  "description": "Pagos de tarjetas, propiedades, servicios y colegiaturas",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F3F6FC",
+  "theme_color": "#0038B3",
+  "orientation": "portrait",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

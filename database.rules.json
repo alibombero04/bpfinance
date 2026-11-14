@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "pagos": {
+      ".read": "auth != null && auth.token.email != null && (auth.token.email.toLowerCase() == 'alibombero@gmail.com' || auth.token.email.toLowerCase() == 'gpatron18@hotmail.com')",
+      ".write": "auth != null && auth.token.email != null && (auth.token.email.toLowerCase() == 'alibombero@gmail.com' || auth.token.email.toLowerCase() == 'gpatron18@hotmail.com')"
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

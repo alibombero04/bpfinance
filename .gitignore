@@ -1,0 +1,8 @@
+node_modules/
+.netlify/
+.env
+.env.*
+*.log
+# Llaves de administrador: nunca en el repo
+*firebase-adminsdk*.json
+serviceAccount*.json
