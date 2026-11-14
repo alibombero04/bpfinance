@@ -3,6 +3,12 @@
   publish = "."
   functions = "netlify/functions"
 
+[build.environment]
+  # La apiKey de la configuración web de Firebase es pública por diseño (viaja
+  # en index.html); no es un secreto. Se excluye SOLO ese valor del escáner de
+  # secretos de Netlify, que sigue activo para todo lo demás.
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyC8ceQD1OSe7aRcMngfVlqGGui0sAVuQpc"
+
 [[headers]]
   for = "/*"
   [headers.values]
