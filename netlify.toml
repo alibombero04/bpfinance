@@ -23,7 +23,7 @@
       font-src 'self'
         https://fonts.gstatic.com;
       connect-src 'self'
-        https://bpfinance.netlify.app
+        https://bpfinanzas.netlify.app
         https://*.firebaseio.com
         wss://*.firebaseio.com
         https://firebasestorage.googleapis.com

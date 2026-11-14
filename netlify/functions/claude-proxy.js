@@ -16,7 +16,7 @@
 // el Origin lo puede falsificar cualquier script.
 
 const ALLOWED_ORIGINS = [
-  'https://bpfinance.netlify.app',
+  'https://bpfinanzas.netlify.app',
   'http://localhost:8888',
   'http://localhost:3000'
 ];
