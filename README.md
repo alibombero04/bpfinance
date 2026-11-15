@@ -32,4 +32,4 @@ Y crear o borrar la cuenta en Firebase → Authentication.
 
 ## Pendiente
 
-- App Check: registrar la clave reCAPTCHA v3 del dominio y ponerla en `RECAPTCHA_SITE_KEY`.
+- App Check: reCAPTCHA Enterprise (`RECAPTCHA_SITE_KEY` en `index.html`). Exigirlo en la consola para Realtime Database y Storage una vez que las metricas muestren peticiones verificadas.

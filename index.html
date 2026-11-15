@@ -183,7 +183,7 @@ button, input, select { font-family:var(--font); }
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getDatabase, ref, push, onValue, remove, update, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
-import { initializeAppCheck, ReCaptchaV3Provider, getToken as getAppCheckToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken as getAppCheckToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
          EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
@@ -199,11 +199,11 @@ const app = initializeApp({
   appId:             "1:401601461671:web:5dcc27a4ccea1e5c8f0a82"
 });
 const isLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-// Clave reCAPTCHA v3 del sitio nuevo. Mientras diga PENDIENTE, App Check no se activa.
-const RECAPTCHA_SITE_KEY = 'PENDIENTE';
+// Clave de reCAPTCHA Enterprise (proyecto finanzas-bp, dominio bpfinanzas.netlify.app). Es publica.
+const RECAPTCHA_SITE_KEY = '6LeXCCIuAAAAAHzGyRlGEzZkyNHgpq5W5o9srgN1';
 let appCheck = null;
 if (!isLocal && RECAPTCHA_SITE_KEY !== 'PENDIENTE') {
-  try { appCheck = initializeAppCheck(app, { provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY), isTokenAutoRefreshEnabled: true }); }
+  try { appCheck = initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(RECAPTCHA_SITE_KEY), isTokenAutoRefreshEnabled: true }); }
   catch(e) { console.error('[AppCheck]', e); }
 }
 const db = getDatabase(app), storage = getStorage(app), auth = getAuth(app);
