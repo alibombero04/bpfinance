@@ -232,7 +232,7 @@ const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'
 
 let userName = '', vista = 'inicio';
 let PAGOS = {}, CATALOGO = {};
-const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', tipo: 'todos', periodo: 'mes', q: '' };
+const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes' };
 let filtro = { ...FILTRO_INICIAL };
 let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
 let foto = null, fotoUrl = null;
@@ -442,7 +442,7 @@ function vPropiedades() {
   h += `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN</small></div><div><b>${new Set(arr.map(p => p.servicio)).size}</b><small>Conceptos</small></div></div>`;
   return h + listaHtml(arr, '🏠', 'Sin pagos de propiedades en esta vista.');
 }
-// ══ VISTA: HISTORIAL (todos los pagos, de cualquier tipo) ══
+// ══ VISTA: HISTORIAL (solo resumen: totales del periodo, sin la lista de pagos) ══
 const PERIODOS = { mes: 'Este mes', anterior: 'Mes pasado', anio: 'Este año', todo: 'Todo' };
 function enPeriodo(p, per) {
   if (per === 'todo') return true;
@@ -452,32 +452,43 @@ function enPeriodo(p, per) {
   const ref = per === 'anterior' ? new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1) : hoy;
   return f.getMonth() === ref.getMonth() && f.getFullYear() === ref.getFullYear();
 }
-function textoPago(p) {
-  return [p.banco, p.tarjeta, p.servicio, p.departamento, p.alumno, p.concepto, p.folio, p.numero_servicio, p.periodo, p.who, p.fecha, p.cantidad]
-    .filter(x => x != null && x !== '').join(' ').toLowerCase();
+// Monto de una fila: pesos y, aparte, lo que haya en otra moneda (USD 90.00), sin convertir.
+function montoResumen(arr) {
+  const otras = {};
+  arr.filter(p => (p.moneda || 'MXN') !== 'MXN').forEach(p => { otras[p.moneda] = (otras[p.moneda] || 0) + (p.cantidad || 0); });
+  const partes = arr.some(p => (p.moneda || 'MXN') === 'MXN') ? [fmt(sumaMXN(arr))] : [];
+  Object.entries(otras).forEach(([m, n]) => partes.push(esc(m) + ' ' + fmt(n).slice(1)));
+  return partes.join(' + ');
 }
-// La busqueda solo repinta la lista, para no perder el foco del teclado.
-function buscarHist(v) {
-  filtro.q = v;
-  const lista = $('histLista'); if (lista) lista.innerHTML = histResultados();
-}
-function histResultados() {
-  let arr = listaPagos().filter(p => enPeriodo(p, filtro.periodo));
-  if (filtro.tipo !== 'todos') arr = arr.filter(p => tipoPago(p) === filtro.tipo);
-  const q = String(filtro.q || '').trim().toLowerCase();
-  if (q) arr = arr.filter(p => textoPago(p).includes(q));
-  const otras = arr.filter(p => (p.moneda || 'MXN') !== 'MXN').length;
-  const h = `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN${otras ? ` (+${otras} en otra moneda)` : ''}</small></div><div><b>${new Set(arr.map(p => p.who).filter(Boolean)).size}</b><small>Personas</small></div></div>`;
-  return h + listaHtml(arr, '🗂', q ? 'Ningún pago coincide con la búsqueda.' : 'Sin pagos en este periodo.');
-}
+const filaResumen = (txt, arr) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--border)"><div class="n" style="font-weight:600">${txt} <span style="font-weight:500;color:var(--text2)">(${arr.length})</span></div><div class="m">${montoResumen(arr)}</div></div>`;
 function vHistorial() {
-  const enPer = listaPagos().filter(p => enPeriodo(p, filtro.periodo));
+  const arr = listaPagos().filter(p => enPeriodo(p, filtro.periodo));
+  const otras = arr.filter(p => (p.moneda || 'MXN') !== 'MXN').length;
   let h = `<div class="chips">${Object.entries(PERIODOS).map(([k, t]) => chip(filtro.periodo === k, `setF('periodo','${k}')`, t)).join('')}</div>`;
-  h += `<div class="chips">${chip(filtro.tipo === 'todos', "setF('tipo','todos')", 'Todos (' + enPer.length + ')')}`
-    + Object.entries(TIPOS).map(([t, d]) => [t, d, enPer.filter(p => tipoPago(p) === t).length]).filter(([, , n]) => n)
-      .map(([t, d, n]) => chip(filtro.tipo === t, `setF('tipo','${t}')`, `${d.icon} ${d.label} (${n})`)).join('') + `</div>`;
-  h += `<input class="inp" style="width:100%;margin:4px 0 10px;padding:12px 14px" type="search" placeholder="🔍 Buscar banco, servicio, referencia…" value="${esc(filtro.q)}" oninput="buscarHist(this.value)">`;
-  return h + `<div id="histLista">${histResultados()}</div>`;
+  h += `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN</small></div><div><b>${fmt(arr.length ? sumaMXN(arr) / Math.max(1, arr.filter(p => (p.moneda || 'MXN') === 'MXN').length) : 0)}</b><small>Promedio por pago</small></div></div>`;
+  if (!arr.length) return h + `<div class="empty"><span>🗂</span>Sin pagos en este periodo.</div>`;
+  if (otras) h += `<div class="banner">ℹ️ ${otras} pago${otras === 1 ? '' : 's'} en otra moneda no se suma${otras === 1 ? '' : 'n'} al total en pesos.</div>`;
+  // Por tipo
+  h += `<div class="card"><h3>📂 Por tipo</h3>` + Object.entries(TIPOS)
+    .map(([t, d]) => [d, arr.filter(p => tipoPago(p) === t)]).filter(([, a]) => a.length)
+    .map(([d, a]) => filaResumen(`${d.icon} ${d.label}`, a)).join('') + `</div>`;
+  // Por propiedad (servicios y cuotas)
+  const deProp = arr.filter(p => ['servicio', 'mantenimiento'].includes(tipoPago(p)) && p.departamento);
+  if (deProp.length) h += `<div class="card"><h3>🏠 Por propiedad</h3>` + PROPIEDADES
+    .map(pr => [pr, deProp.filter(p => p.departamento === pr)]).filter(([, a]) => a.length)
+    .map(([pr, a]) => filaResumen(`${pr === 'Casa' ? '🏡' : '🏢'} ${pr}`, a)).join('') + `</div>`;
+  // Por mes (cuando el periodo abarca varios)
+  if (filtro.periodo === 'anio' || filtro.periodo === 'todo') {
+    const meses = {};
+    arr.forEach(p => { const f = fechaDeDMY(p.fecha); const k = f ? f.getFullYear() * 100 + f.getMonth() : -1; (meses[k] = meses[k] || []).push(p); });
+    h += `<div class="card"><h3>📅 Por mes</h3>` + Object.keys(meses).map(Number).sort((a, b) => b - a)
+      .map(k => filaResumen(k < 0 ? 'Sin fecha' : `${MESES[k % 100]} ${Math.floor(k / 100)}`, meses[k])).join('') + `</div>`;
+  }
+  // Por persona
+  const personas = [...new Set(arr.map(p => p.who || 'Sin nombre'))];
+  if (personas.length > 1) h += `<div class="card"><h3>👤 Registrado por</h3>` + personas
+    .map(w => filaResumen(esc(w), arr.filter(p => (p.who || 'Sin nombre') === w))).join('') + `</div>`;
+  return h;
 }
 function tituloPago(p) {
   const t = tipoPago(p), ic = TIPOS[t].icon;
