@@ -32,7 +32,7 @@ button, input, select { font-family:var(--font); }
 /* AUTH */
 .auth { min-height:100dvh; overflow-y:auto; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px 16px; }
 .auth-card { width:100%; max-width:420px; background:var(--surface); border-radius:var(--r-xl); box-shadow:var(--shadow); padding:28px 24px; display:flex; flex-direction:column; gap:14px; }
-.brand { display:flex; align-items:center; justify-content:center; gap:12px; }
+.brand { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:10px; }
 .brand .ic { width:56px; height:56px; border-radius:16px; background:var(--accent); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 18px rgba(0,56,179,.3); }
 .brand .nm { font-family:var(--font-h); font-weight:800; font-size:27px; line-height:1; letter-spacing:-.5px; }
 .brand .nm span { color:var(--accent); }
@@ -133,9 +133,6 @@ button, input, select { font-family:var(--font); }
       <div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="3"/><path d="M16 13h2"/><path d="M6 6V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg></div>
       <div><div class="nm">Finanzas<span>_BP</span></div><div class="sub">ADMINISTRACIÓN FINANCIERA</div></div>
     </div>
-    <h1>Bienvenido de nuevo</h1>
-    <p class="desc">Pagos de tarjetas, propiedades, servicios y colegiaturas</p>
-    <div class="pill"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Acceso exclusivo para Alex y Gaby</div>
     <div class="lbl">Correo electrónico</div>
     <div class="inpw"><svg class="l" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
       <input class="inp" type="email" id="lEmail" placeholder="tu@correo.com" autocomplete="username" autocapitalize="off"></div>
@@ -145,10 +142,7 @@ button, input, select { font-family:var(--font); }
       <button class="eye" type="button" onclick="const i=$('lPass');i.type=i.type==='password'?'text':'password'" aria-label="Mostrar contraseña"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
     <div class="err" id="lErr"></div>
     <button class="btn" id="lBtn" onclick="entrar()">Iniciar sesión <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg></button>
-    <div class="info"><b><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>Acceso restringido</b>
-      Solo Alex y Gaby tienen cuenta. Si es tu primera vez, usa «¿Olvidaste tu contraseña?» para crear la tuya.</div>
   </div>
-  <div class="foot">Los datos se validan contra Firebase con tu cuenta.</div>
 </div>
 
 <!-- APP -->
