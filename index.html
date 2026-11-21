@@ -261,7 +261,7 @@ const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'
 
 let userName = '', vista = 'inicio';
 let PAGOS = {}, CATALOGO = {};
-const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', ciudad: '' };
+const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '' };
 let filtro = { ...FILTRO_INICIAL };
 let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
 let foto = null, fotoUrl = null;
@@ -526,7 +526,7 @@ function vHistorial() {
 // monedas extranjeras se pasan a pesos con el tipo de cambio de cada día (BCE).
 const NS_BASE = 'Mérida';   // ciudad de casa: lo gastado en otra ciudad cuenta como viaje
 const NS_MONEDAS = ['USD', 'EUR', 'GBP'];
-const NSG = { user: null, estado: 'sin-sesion', recs: [], err: '', unsub: null, soloPropios: false, opciones: { persona: [], ciudad: [] } };
+const NSG = { user: null, estado: 'sin-sesion', recs: [], err: '', unsub: null, soloPropios: false, opciones: { persona: [], pais: [], ciudad: [] } };
 const TC = {};              // { USD: { desde, hasta, rates: { 'AAAA-MM-DD': 18.7 } } }
 const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const isoDe = d => d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : '';
@@ -546,7 +546,9 @@ function nsEscuchar() {
   const r = FB.ref(NS.db, 'records');
   const ok = snap => {
     const v = snap.val() || {};
-    NSG.recs = Object.entries(v).map(([k, x]) => ({ _key: k, ...x })).filter(x => x && Number(x.cantidad) > 0);
+    // `pais` y `ciudad` ya vienen depurados en NoteScanner; si un gasto nuevo no los trae, se usa el lugar tal cual.
+    NSG.recs = Object.entries(v).filter(([, x]) => x && Number(x.cantidad) > 0)
+      .map(([k, x]) => ({ _key: k, ...x, _ciudad: x.ciudad || String(x.lugar || '').trim(), _pais: x.pais || '' }));
     NSG.estado = 'listo'; NSG.err = '';
     repintarGastos();
     nsTiposCambio().then(cambio => { if (cambio) repintarGastos(); });
@@ -637,6 +639,7 @@ const filaG = (txt, arr, onclick = '') => `<div class="row" style="padding:6px 0
 function nsFiltro(campo, i) {
   const v = i < 0 ? '' : NSG.opciones[campo][i];
   filtro[campo] = filtro[campo] === v ? '' : v;
+  if (campo === 'pais') filtro.ciudad = '';
   pintar();
 }
 
@@ -657,28 +660,38 @@ function vGastos() {
   const personas = agrupar(delPeriodo, 'who', 'Sin nombre');
   NSG.opciones.persona = personas.map(x => x.k);
   let arr = filtro.persona ? delPeriodo.filter(r => (norm(r.who) || '~') === filtro.persona) : delPeriodo;
-  const ciudades = agrupar(arr, 'lugar', 'Sin lugar');
+  const paises = agrupar(arr, '_pais', 'Sin país');
+  NSG.opciones.pais = paises.map(x => x.k);
+  if (filtro.pais) arr = arr.filter(r => (norm(r._pais) || '~') === filtro.pais);
+  const ciudades = agrupar(arr, '_ciudad', 'Sin lugar');
   NSG.opciones.ciudad = ciudades.map(x => x.k);
-  if (filtro.ciudad) arr = arr.filter(r => (norm(r.lugar) || '~') === filtro.ciudad);
+  if (filtro.ciudad) arr = arr.filter(r => (norm(r._ciudad) || '~') === filtro.ciudad);
 
   let h = `<div class="chips">${Object.entries(PERIODOS).map(([k, t]) => chip(filtro.periodo === k, `setF('periodo','${k}')`, t)).join('')}</div>`;
   if (personas.length > 1 || filtro.persona) h += `<div class="chips">${chip(!filtro.persona, 'nsFiltro(\'persona\',-1)', 'Todos')}${personas.map((x, i) => chip(filtro.persona === x.k, `nsFiltro('persona',${i})`, '👤 ' + esc(x.nombre))).join('')}</div>`;
-  if (filtro.ciudad) { const c = ciudades.find(x => x.k === filtro.ciudad); h += `<div class="chips">${chip(true, 'nsFiltro(\'ciudad\',-1)', '📍 ' + esc(c ? c.nombre : '') + ' ✕')}</div>`; }
+  if (filtro.pais || filtro.ciudad) {
+    const p = paises.find(x => x.k === filtro.pais), c = ciudades.find(x => x.k === filtro.ciudad);
+    h += `<div class="chips">${filtro.pais ? chip(true, 'nsFiltro(\'pais\',-1)', '🌎 ' + esc(p ? p.nombre : '') + ' ✕') : ''}${filtro.ciudad ? chip(true, 'nsFiltro(\'ciudad\',-1)', '📍 ' + esc(c ? c.nombre : '') + ' ✕') : ''}</div>`;
+  }
   const sinTc = arr.filter(r => enPesos(r) === null);
-  h += `<div class="stats"><div><b>${fmt(sumaPesos(arr))}</b><small>Total en pesos</small></div><div><b>${arr.length}</b><small>Gastos</small></div><div><b>${new Set(arr.map(r => norm(r.lugar) || '~')).size}</b><small>Ciudades</small></div></div>`;
+  h += `<div class="stats"><div><b>${fmt(sumaPesos(arr))}</b><small>Total en pesos</small></div><div><b>${arr.length}</b><small>Gastos</small></div><div><b>${new Set(arr.map(r => norm(r._ciudad) || '~')).size}</b><small>Ciudades</small></div></div>`;
   if (!arr.length) return h + `<div class="empty"><span>🛒</span>Sin gastos en este periodo.</div>`;
   if (sinTc.length) h += `<div class="banner">ℹ️ ${sinTc.length} gasto${sinTc.length === 1 ? '' : 's'} en otra moneda sin tipo de cambio todavía (¿sin internet?); no se suma${sinTc.length === 1 ? '' : 'n'} al total.</div>`;
 
   // Por persona
   if (!filtro.persona && personas.length > 1) h += `<div class="card"><h3>👤 Por persona</h3>` + agrupar(arr, 'who', 'Sin nombre')
     .map(x => filaG(esc(x.nombre), x.recs)).join('') + `</div>`;
-  // Por ciudad: casa y viajes (todo lo que no es Mérida); toca una ciudad para ver su detalle
+  // Por país → ciudades. Toca un país para ver solo ese país, o una ciudad para ver en qué se gastó ahí.
   if (!filtro.ciudad) {
-    const base = norm(NS_BASE), casa = ciudades.filter(x => x.k === base), viajes = ciudades.filter(x => x.k !== base);
-    const fila = x => filaG(`📍 ${esc(x.nombre)}`, x.recs, `nsFiltro('ciudad',${NSG.opciones.ciudad.indexOf(x.k)})`);
-    h += `<div class="card"><h3>📍 Por ciudad</h3>` + casa.map(fila).join('');
-    if (viajes.length) h += `<div class="row" style="padding:8px 0 4px;border-top:1px solid var(--border)"><div class="n" style="font-weight:700">✈️ Viajes (fuera de ${esc(NS_BASE)})</div><div class="m" style="font-weight:700">${fmt(viajes.reduce((s, x) => s + x.total, 0))}</div></div>` + viajes.map(fila).join('');
-    h += `<div style="font-size:11px;color:var(--text3);margin-top:6px">Toca una ciudad para ver en qué se gastó.</div></div>`;
+    const base = norm(NS_BASE);
+    const fuera = arr.filter(r => norm(r._ciudad) !== base);
+    h += `<div class="card"><h3>🌎 Por país y ciudad</h3>`;
+    agrupar(arr, '_pais', 'Sin país').forEach(p => {
+      h += `<div class="row" style="padding:8px 0 4px;border-top:1px solid var(--border);cursor:pointer" onclick="nsFiltro('pais',${NSG.opciones.pais.indexOf(p.k)})"><div class="n" style="font-weight:700">${esc(p.nombre)} <span style="font-weight:500;color:var(--text2)">(${p.recs.length})</span></div><div class="m" style="font-weight:700">${fmt(p.total)}</div></div>`;
+      h += agrupar(p.recs, '_ciudad', 'Sin lugar').map(c => `<div class="row" style="padding:4px 0 4px 14px;cursor:pointer" onclick="nsFiltro('ciudad',${NSG.opciones.ciudad.indexOf(c.k)})"><div class="n" style="font-weight:500">📍 ${esc(c.nombre)} <span style="color:var(--text2)">(${c.recs.length})</span></div><div class="m" style="font-weight:500">${fmt(c.total)}</div></div>`).join('');
+    });
+    if (fuera.length && fuera.length < arr.length) h += `<div class="row" style="padding:8px 0 0;border-top:1px solid var(--border)"><div class="n" style="font-weight:700">✈️ Fuera de ${esc(NS_BASE)} <span style="font-weight:500;color:var(--text2)">(${fuera.length})</span></div><div class="m" style="font-weight:700">${fmt(sumaPesos(fuera))}</div></div>`;
+    h += `<div style="font-size:11px;color:var(--text3);margin-top:6px">Toca un país o una ciudad para ver en qué se gastó.</div></div>`;
   }
   // Por tipo y por tarjeta
   h += `<div class="card"><h3>📂 Por tipo de gasto</h3>` + agrupar(arr, 'tipo', 'Sin tipo').map(x => filaG(esc(x.nombre), x.recs)).join('') + `</div>`;
