@@ -7,7 +7,8 @@
   # La apiKey de la configuración web de Firebase es pública por diseño (viaja
   # en index.html); no es un secreto. Se excluye SOLO ese valor del escáner de
   # secretos de Netlify, que sigue activo para todo lo demás.
-  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyC8ceQD1OSe7aRcMngfVlqGGui0sAVuQpc"
+  # La segunda es la apiKey web (pública) de NoteScanner: BP Finanzas solo LEE sus gastos.
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyC8ceQD1OSe7aRcMngfVlqGGui0sAVuQpc,AIzaSyCIQ27UwtCRizTR3wfTfLQzar6lTtzoiZM"
 
 [[headers]]
   for = "/*"

@@ -160,6 +160,7 @@ button, input, select { font-family:var(--font); }
     <button data-v="servicios" onclick="ir('servicios')"><span>🧾</span>Servicios</button>
     <button data-v="colegiaturas" onclick="ir('colegiaturas')"><span>🎓</span>Colegiaturas</button>
     <button data-v="historial" onclick="ir('historial')"><span>🗂</span>Historial</button>
+    <button data-v="gastos" onclick="ir('gastos')"><span>🛒</span>Gastos</button>
   </div>
   <button class="fab" onclick="abrirRegistro()" title="Registrar pago">＋</button>
 </div>
@@ -176,7 +177,7 @@ button, input, select { font-family:var(--font); }
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, push, onValue, remove, update, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getDatabase, ref, push, onValue, remove, update, get, query, orderByChild, equalTo } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken as getAppCheckToken } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
@@ -207,6 +208,34 @@ window.FB = { db, storage, auth, appCheck, getAppCheckToken, ref, push, onValue,
   signInWithEmailAndPassword, sendPasswordResetEmail, signOut, EmailAuthProvider, reauthenticateWithCredential };
 let primera = true;
 onAuthStateChanged(auth, u => { if (primera) { primera = false; document.dispatchEvent(new CustomEvent('fb-auth', { detail: u })); } });
+
+// ── NoteScanner (otro proyecto: notescanner-bfd94), SOLO LECTURA ──
+// BP Finanzas lee los gastos con la cuenta de NoteScanner de quien entra, y las
+// reglas de NoteScanner deciden qué ve (Alex: todo). NoteScanner no sabe nada de
+// BP Finanzas, así que Jonathan no tiene ningún camino hacia aquí.
+// Es una app web propia dentro de NoteScanner ("BP Finanzas (lector)") con su
+// propia clave de reCAPTCHA Enterprise para bpfinanzas.netlify.app: se puede
+// apagar en App Check de NoteScanner sin tocar la app de NoteScanner.
+const NS_APP_ID = '1:20507029098:web:16c6517ed0bce5fe3e2413';
+const NS_RECAPTCHA_KEY = '6LcQCSwuAAAAAL3SBAaMHm-9JV59Ayei_NmABqVk';
+const nsListo = NS_APP_ID !== 'PENDIENTE' && NS_RECAPTCHA_KEY !== 'PENDIENTE';
+const nsApp = initializeApp({
+  apiKey:            "AIzaSyCIQ27UwtCRizTR3wfTfLQzar6lTtzoiZM",
+  authDomain:        "notescanner-bfd94.firebaseapp.com",
+  databaseURL:       "https://notescanner-bfd94-default-rtdb.firebaseio.com",
+  projectId:         "notescanner-bfd94",
+  storageBucket:     "notescanner-bfd94.firebasestorage.app",
+  messagingSenderId: "20507029098",
+  appId:             nsListo ? NS_APP_ID : "1:20507029098:web:5cf5ef6729c06ad33e2413"
+}, 'notescanner');
+if (!isLocal && nsListo) {
+  try { initializeAppCheck(nsApp, { provider: new ReCaptchaEnterpriseProvider(NS_RECAPTCHA_KEY), isTokenAutoRefreshEnabled: true }); }
+  catch(e) { console.error('[AppCheck NoteScanner]', e); }
+}
+const nsAuth = getAuth(nsApp);
+nsAuth.languageCode = 'es';
+window.NS = { db: getDatabase(nsApp), auth: nsAuth, listo: nsListo, query, orderByChild, equalTo };
+onAuthStateChanged(nsAuth, u => document.dispatchEvent(new CustomEvent('ns-auth', { detail: u })));
 </script>
 
 <script>
@@ -232,7 +261,7 @@ const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'
 
 let userName = '', vista = 'inicio';
 let PAGOS = {}, CATALOGO = {};
-const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes' };
+const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', ciudad: '' };
 let filtro = { ...FILTRO_INICIAL };
 let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
 let foto = null, fotoUrl = null;
@@ -304,7 +333,7 @@ async function olvide() {
   try { await FB.sendPasswordResetEmail(FB.auth, email); $('lErr').textContent = '📧 Te enviamos un correo para cambiarla'; }
   catch(e) { $('lErr').textContent = '❌ ' + (e.code || e.message); }
 }
-async function salir() { try { await FB.signOut(FB.auth); } catch(e) {} location.reload(); }
+async function salir() { try { await FB.signOut(NS.auth); } catch(e) {} try { await FB.signOut(FB.auth); } catch(e) {} location.reload(); }
 async function entrarConCuenta(user) {
   // Las cuentas las crea Alex desde la consola (el registro está apagado), así
   // que no se pide confirmar el correo: el filtro es la lista ACCESO, igual que
@@ -321,6 +350,7 @@ async function entrarConCuenta(user) {
   $('login').classList.add('hidden');
   $('app').classList.add('on');
   escuchar();
+  nsEscuchar();
 }
 
 // ══ DATOS ══
@@ -351,6 +381,7 @@ function pintar() {
   else if (vista === 'servicios') m.innerHTML = vCatalogo('servicio');
   else if (vista === 'colegiaturas') m.innerHTML = vCatalogo('colegiatura');
   else if (vista === 'historial') m.innerHTML = vHistorial();
+  else if (vista === 'gastos') m.innerHTML = vGastos();
 }
 const chip = (on, onclick, txt) => `<button class="chip${on ? ' on' : ''}" onclick="${onclick}">${txt}</button>`;
 const sumaMXN = arr => arr.filter(p => (p.moneda || 'MXN') === 'MXN').reduce((s, p) => s + (p.cantidad || 0), 0);
@@ -490,6 +521,187 @@ function vHistorial() {
     .map(w => filaResumen(esc(w), arr.filter(p => (p.who || 'Sin nombre') === w))).join('') + `</div>`;
   return h;
 }
+// ══ VISTA: GASTOS DE NOTESCANNER (solo lectura, en vivo) ══
+// Lee `records` de NoteScanner con la cuenta de NoteScanner de quien entra. Las
+// monedas extranjeras se pasan a pesos con el tipo de cambio de cada día (BCE).
+const NS_BASE = 'Mérida';   // ciudad de casa: lo gastado en otra ciudad cuenta como viaje
+const NS_MONEDAS = ['USD', 'EUR', 'GBP'];
+const NSG = { user: null, estado: 'sin-sesion', recs: [], err: '', unsub: null, soloPropios: false, opciones: { persona: [], ciudad: [] } };
+const TC = {};              // { USD: { desde, hasta, rates: { 'AAAA-MM-DD': 18.7 } } }
+const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const isoDe = d => d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : '';
+function repintarGastos() { if (vista === 'gastos') pintar(); }
+
+document.addEventListener('ns-auth', e => {
+  const u = e.detail;
+  if (NSG.unsub) { NSG.unsub(); NSG.unsub = null; }
+  NSG.user = u; NSG.recs = []; NSG.err = ''; NSG.soloPropios = false;
+  NSG.estado = u ? 'cargando' : 'sin-sesion';
+  nsEscuchar();
+  repintarGastos();
+});
+function nsEscuchar() {
+  if (NSG.unsub || !userName || !NSG.user) return;
+  NSG.estado = 'cargando';
+  const r = FB.ref(NS.db, 'records');
+  const ok = snap => {
+    const v = snap.val() || {};
+    NSG.recs = Object.entries(v).map(([k, x]) => ({ _key: k, ...x })).filter(x => x && Number(x.cantidad) > 0);
+    NSG.estado = 'listo'; NSG.err = '';
+    repintarGastos();
+    nsTiposCambio().then(cambio => { if (cambio) repintarGastos(); });
+  };
+  const fallo = err => { NSG.unsub = null; NSG.estado = 'error'; NSG.err = err && err.message || String(err); repintarGastos(); };
+  NSG.unsub = FB.onValue(r, ok, err => {
+    // Sin permiso de "ver todo" en NoteScanner: solo los gastos propios.
+    NSG.unsub = null;
+    if (NSG.soloPropios) return fallo(err);
+    NSG.soloPropios = true;
+    NSG.unsub = FB.onValue(NS.query(r, NS.orderByChild('who'), NS.equalTo(userName)), ok, fallo);
+  });
+}
+async function nsConectar() {
+  const pass = $('nsPass').value;
+  const email = String(FB.auth.currentUser && FB.auth.currentUser.email || '');
+  if (!pass) { $('nsErr').textContent = 'Escribe tu contraseña de NoteScanner'; return; }
+  const b = $('nsBtn'); b.disabled = true; b.textContent = 'Conectando…';
+  try { await FB.signInWithEmailAndPassword(NS.auth, email, pass); }
+  catch(e) {
+    b.disabled = false; b.textContent = 'Conectar NoteScanner';
+    const c = e.code || '';
+    $('nsErr').textContent = /invalid-credential|wrong-password|user-not-found|invalid-login/.test(c) ? 'Contraseña incorrecta (es la de NoteScanner, no la de BP Finanzas)'
+      : /too-many/.test(c) ? 'Demasiados intentos; espera unos minutos' : 'No se pudo conectar: ' + (e.message || c);
+  }
+}
+async function nsOlvide() {
+  const email = String(FB.auth.currentUser && FB.auth.currentUser.email || '');
+  try { await FB.sendPasswordResetEmail(NS.auth, email); toast('📧 Te mandamos un correo para la contraseña de NoteScanner'); }
+  catch(e) { toast('❌ ' + (e.message || e.code)); }
+}
+async function nsDesconectar() { try { await FB.signOut(NS.auth); } catch(e) {} }
+
+// ── tipos de cambio (Frankfurter / Banco Central Europeo), guardados en el teléfono ──
+function tcCache(m) { try { return JSON.parse(localStorage.getItem('fbp_tc_' + m) || 'null'); } catch(e) { return null; } }
+async function nsTiposCambio() {
+  let cambio = false;
+  const hoyIso = isoDe(new Date());
+  for (const m of NS_MONEDAS) {
+    const fechas = NSG.recs.filter(r => r.moneda === m).map(r => isoDe(fechaDeDMY(r.fecha))).filter(Boolean).sort();
+    if (!fechas.length) continue;
+    const d0 = new Date(fechas[0] + 'T12:00:00');
+    d0.setDate(d0.getDate() - 7);   // margen para fines de semana y festivos
+    const desde = isoDe(d0), hasta = fechas[fechas.length - 1] > hoyIso ? hoyIso : fechas[fechas.length - 1];
+    let c = TC[m] || tcCache(m);
+    if (c && c.desde <= desde && c.hasta >= hasta) { if (!TC[m]) { TC[m] = c; cambio = true; } continue; }
+    try {
+      const res = await fetch(`https://api.frankfurter.dev/v1/${desde}..${hasta}?base=${m}&symbols=MXN`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const j = await res.json();
+      const rates = {};
+      Object.entries(j.rates || {}).forEach(([d, x]) => { if (x && x.MXN > 0) rates[d] = x.MXN; });
+      c = { desde, hasta, rates };
+      try { localStorage.setItem('fbp_tc_' + m, JSON.stringify(c)); } catch(e) {}
+    } catch(e) { console.warn('[tipo de cambio]', m, e); }
+    if (c) { TC[m] = c; cambio = true; }
+  }
+  return cambio;
+}
+// Tipo de cambio del día o, si ese día no hubo (fin de semana), el último anterior.
+function tasa(m, fecha) {
+  const c = TC[m]; const d = fechaDeDMY(fecha);
+  if (!c || !d) return null;
+  for (let i = 0; i < 8; i++) { const r = c.rates[isoDe(d)]; if (r) return r; d.setDate(d.getDate() - 1); }
+  return null;
+}
+function enPesos(r) {
+  const m = r.moneda || 'MXN', n = Number(r.cantidad) || 0;
+  if (m === 'MXN') return n;
+  const t = tasa(m, r.fecha);
+  return t ? Math.round(n * t * 100) / 100 : null;
+}
+
+// Agrupa sin importar acentos ni mayúsculas; muestra la forma más usada.
+function agrupar(arr, campo, vacio) {
+  const g = {};
+  arr.forEach(r => {
+    const txt = String(r[campo] || '').trim(), k = norm(txt) || '~';
+    const x = g[k] = g[k] || { k, nombres: {}, recs: [] };
+    x.nombres[txt || vacio] = (x.nombres[txt || vacio] || 0) + 1;
+    x.recs.push(r);
+  });
+  return Object.values(g).map(x => ({ ...x, nombre: Object.entries(x.nombres).sort((a, b) => b[1] - a[1])[0][0], total: sumaPesos(x.recs) }))
+    .sort((a, b) => b.total - a.total);
+}
+const sumaPesos = arr => Math.round(arr.reduce((s, r) => s + (enPesos(r) || 0), 0) * 100) / 100;
+const filaG = (txt, arr, onclick = '') => `<div class="row" style="padding:6px 0;border-top:1px solid var(--border)${onclick ? ';cursor:pointer' : ''}"${onclick ? ` onclick="${onclick}"` : ''}><div class="n" style="font-weight:600">${txt} <span style="font-weight:500;color:var(--text2)">(${arr.length})</span></div><div class="m">${fmt(sumaPesos(arr))}</div></div>`;
+function nsFiltro(campo, i) {
+  const v = i < 0 ? '' : NSG.opciones[campo][i];
+  filtro[campo] = filtro[campo] === v ? '' : v;
+  pintar();
+}
+
+function vGastos() {
+  if (!NS.listo) return `<div class="banner">🛠 Falta registrar BP Finanzas en NoteScanner (App Check). En cuanto esté, aquí verás los gastos de NoteScanner al día.</div>`;
+  if (!NSG.user) return `<div class="card"><h3>🛒 Gastos de NoteScanner</h3>
+      <p style="font-size:14px;color:var(--text2);margin:6px 0 12px">Conecta tu cuenta de NoteScanner <b>una sola vez</b> en este teléfono. Después los gastos aparecen aquí solos y al día, sin hacer nada en NoteScanner.</p>
+      <div class="f"><label>Correo</label><input value="${esc(FB.auth.currentUser && FB.auth.currentUser.email || '')}" disabled></div>
+      <div class="f" style="margin-top:10px"><label>Contraseña de NoteScanner</label><input type="password" id="nsPass" autocomplete="current-password" onkeydown="if(event.key==='Enter')nsConectar()"></div>
+      <div id="nsErr" style="color:var(--red);font-size:13px;margin:8px 0;min-height:16px"></div>
+      <button class="btn" id="nsBtn" onclick="nsConectar()">Conectar NoteScanner</button>
+      <button class="btn-lite" style="margin-top:10px" onclick="nsOlvide()">¿Olvidaste tu contraseña de NoteScanner?</button></div>`;
+  if (NSG.estado === 'cargando') return `<div class="empty"><span>⏳</span>Leyendo gastos de NoteScanner…</div>`;
+  if (NSG.estado === 'error') return `<div class="banner err">❌ No se pudieron leer los gastos de NoteScanner: ${esc(NSG.err)}</div>
+      <button class="btn-lite" onclick="nsDesconectar()">Desconectar NoteScanner</button>`;
+
+  const delPeriodo = NSG.recs.filter(r => enPeriodo(r, filtro.periodo));
+  const personas = agrupar(delPeriodo, 'who', 'Sin nombre');
+  NSG.opciones.persona = personas.map(x => x.k);
+  let arr = filtro.persona ? delPeriodo.filter(r => (norm(r.who) || '~') === filtro.persona) : delPeriodo;
+  const ciudades = agrupar(arr, 'lugar', 'Sin lugar');
+  NSG.opciones.ciudad = ciudades.map(x => x.k);
+  if (filtro.ciudad) arr = arr.filter(r => (norm(r.lugar) || '~') === filtro.ciudad);
+
+  let h = `<div class="chips">${Object.entries(PERIODOS).map(([k, t]) => chip(filtro.periodo === k, `setF('periodo','${k}')`, t)).join('')}</div>`;
+  if (personas.length > 1 || filtro.persona) h += `<div class="chips">${chip(!filtro.persona, 'nsFiltro(\'persona\',-1)', 'Todos')}${personas.map((x, i) => chip(filtro.persona === x.k, `nsFiltro('persona',${i})`, '👤 ' + esc(x.nombre))).join('')}</div>`;
+  if (filtro.ciudad) { const c = ciudades.find(x => x.k === filtro.ciudad); h += `<div class="chips">${chip(true, 'nsFiltro(\'ciudad\',-1)', '📍 ' + esc(c ? c.nombre : '') + ' ✕')}</div>`; }
+  const sinTc = arr.filter(r => enPesos(r) === null);
+  h += `<div class="stats"><div><b>${fmt(sumaPesos(arr))}</b><small>Total en pesos</small></div><div><b>${arr.length}</b><small>Gastos</small></div><div><b>${new Set(arr.map(r => norm(r.lugar) || '~')).size}</b><small>Ciudades</small></div></div>`;
+  if (!arr.length) return h + `<div class="empty"><span>🛒</span>Sin gastos en este periodo.</div>`;
+  if (sinTc.length) h += `<div class="banner">ℹ️ ${sinTc.length} gasto${sinTc.length === 1 ? '' : 's'} en otra moneda sin tipo de cambio todavía (¿sin internet?); no se suma${sinTc.length === 1 ? '' : 'n'} al total.</div>`;
+
+  // Por persona
+  if (!filtro.persona && personas.length > 1) h += `<div class="card"><h3>👤 Por persona</h3>` + agrupar(arr, 'who', 'Sin nombre')
+    .map(x => filaG(esc(x.nombre), x.recs)).join('') + `</div>`;
+  // Por ciudad: casa y viajes (todo lo que no es Mérida); toca una ciudad para ver su detalle
+  if (!filtro.ciudad) {
+    const base = norm(NS_BASE), casa = ciudades.filter(x => x.k === base), viajes = ciudades.filter(x => x.k !== base);
+    const fila = x => filaG(`📍 ${esc(x.nombre)}`, x.recs, `nsFiltro('ciudad',${NSG.opciones.ciudad.indexOf(x.k)})`);
+    h += `<div class="card"><h3>📍 Por ciudad</h3>` + casa.map(fila).join('');
+    if (viajes.length) h += `<div class="row" style="padding:8px 0 4px;border-top:1px solid var(--border)"><div class="n" style="font-weight:700">✈️ Viajes (fuera de ${esc(NS_BASE)})</div><div class="m" style="font-weight:700">${fmt(viajes.reduce((s, x) => s + x.total, 0))}</div></div>` + viajes.map(fila).join('');
+    h += `<div style="font-size:11px;color:var(--text3);margin-top:6px">Toca una ciudad para ver en qué se gastó.</div></div>`;
+  }
+  // Por tipo y por tarjeta
+  h += `<div class="card"><h3>📂 Por tipo de gasto</h3>` + agrupar(arr, 'tipo', 'Sin tipo').map(x => filaG(esc(x.nombre), x.recs)).join('') + `</div>`;
+  h += `<div class="card"><h3>💳 Por tarjeta</h3>` + agrupar(arr, 'tarjeta', 'Sin tarjeta').map(x => filaG(esc(x.nombre), x.recs)).join('') + `</div>`;
+  // Monedas: lo original y su equivalente en pesos
+  const ext = arr.filter(r => (r.moneda || 'MXN') !== 'MXN');
+  if (ext.length) {
+    h += `<div class="card"><h3>💱 Otras monedas</h3>` + NS_MONEDAS.map(m => [m, ext.filter(r => r.moneda === m)]).filter(([, a]) => a.length)
+      .map(([m, a]) => { const orig = a.reduce((s, r) => s + (Number(r.cantidad) || 0), 0), conv = a.filter(r => enPesos(r) !== null);
+        return `<div class="row" style="padding:6px 0;border-top:1px solid var(--border)"><div class="n" style="font-weight:600">${m} ${fmt(orig).slice(1)} <span style="font-weight:500;color:var(--text2)">(${a.length})</span></div><div class="m">${conv.length ? '≈ ' + fmt(sumaPesos(conv)) : '—'}</div></div>`; }).join('')
+      + `<div style="font-size:11px;color:var(--text3);margin-top:6px">Convertido con el tipo de cambio de cada día (Banco Central Europeo).</div></div>`;
+  }
+  // Por mes (cuando el periodo abarca varios)
+  if (filtro.periodo === 'anio' || filtro.periodo === 'todo') {
+    const meses = {};
+    arr.forEach(r => { const f = fechaDeDMY(r.fecha); const k = f ? f.getFullYear() * 100 + f.getMonth() : -1; (meses[k] = meses[k] || []).push(r); });
+    h += `<div class="card"><h3>📅 Por mes</h3>` + Object.keys(meses).map(Number).sort((a, b) => b - a)
+      .map(k => filaG(k < 0 ? 'Sin fecha' : `${MESES[k % 100]} ${Math.floor(k / 100)}`, meses[k])).join('') + `</div>`;
+  }
+  h += `<div style="text-align:center;font-size:11px;color:var(--text3);padding:4px 0 10px">Datos en vivo de NoteScanner${NSG.soloPropios ? ' · solo tus gastos' : ''} · <a href="#" onclick="nsDesconectar();return false" style="color:var(--text3)">desconectar</a></div>`;
+  return h;
+}
+
 function tituloPago(p) {
   const t = tipoPago(p), ic = TIPOS[t].icon;
   if (t === 'tarjeta') return `${ic} ${esc(p.banco || 'Tarjeta')}${p.tarjeta ? ' ****' + esc(p.tarjeta) : ''}`;
