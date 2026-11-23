@@ -7,8 +7,10 @@ service firebase.storage {
       return request.auth != null
         && request.auth.token.email.lower() in ['alibombero@gmail.com', 'gpatron18@hotmail.com'];
     }
+    // Comprobantes: foto (image/*) o PDF, máximo 10 MB
     function imagenValida() {
-      return request.resource.contentType.matches('image/.*')
+      return (request.resource.contentType.matches('image/.*')
+              || request.resource.contentType == 'application/pdf')
         && request.resource.size < 10 * 1024 * 1024;
     }
     match /pagos/{archivo} {

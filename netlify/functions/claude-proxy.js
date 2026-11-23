@@ -20,7 +20,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8888',
   'http://localhost:3000'
 ];
-const MAX_BODY_BYTES = 1_500_000;      // 1.5 MB — imagen base64 + prompt
+const MAX_BODY_BYTES = 5_000_000;      // 5 MB — imagen o PDF (≤3.5 MB) en base64 + prompt; Netlify acepta hasta 6 MB
 const RATE_LIMIT_PER_MIN = 30;         // reqs/min por IP
 
 // Lo único que piden las apps. Cualquier otra cosa se rechaza para que nadie

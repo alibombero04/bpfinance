@@ -113,6 +113,9 @@ button, input, select { font-family:var(--font); }
 .f input:focus, .f select:focus { border-color:var(--accent); background:#fff; }
 .f label { font-size:12px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; }
 .g2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+.pdfc { display:flex; align-items:center; gap:10px; margin-top:8px; padding:12px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface2); color:inherit; text-decoration:none; font-weight:600; }
+.pdfc b { font-size:26px; }
 .prev { width:100%; max-height:200px; object-fit:contain; border-radius:var(--r-md); background:#000; }
 .banner { padding:10px 14px; border-radius:var(--r-md); font-size:13px; font-weight:600; background:var(--accent-soft); color:var(--accent); }
 .banner.err { background:rgba(229,56,59,.1); color:var(--red); }
@@ -171,6 +174,7 @@ button, input, select { font-family:var(--font); }
 </div>
 <input type="file" id="camIn" accept="image/*" capture="environment" class="hidden" onchange="onFoto(this)">
 <input type="file" id="galIn" accept="image/*" class="hidden" onchange="onFoto(this)">
+<input type="file" id="pdfIn" accept="application/pdf,.pdf" class="hidden" onchange="onFoto(this)">
 
 <div class="viewer" id="viewer" onclick="this.classList.remove('on')"><img id="viewerImg" alt=""></div>
 <div class="toast" id="toast"></div>
@@ -264,7 +268,7 @@ let PAGOS = {}, CATALOGO = {};
 const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '', categoria: '' };
 let filtro = { ...FILTRO_INICIAL };
 let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
-let foto = null, fotoUrl = null;
+let foto = null, fotoUrl = null, fotoMime = 'image/jpeg'; // fotoMime: image/jpeg o application/pdf
 
 // ── utilidades ──
 const $ = id => document.getElementById(id);
@@ -314,6 +318,12 @@ function metodoPago(p) {
 }
 function normProp(v) { const s = String(v || '').toLowerCase(); return PROPIEDADES.find(p => s.includes(p.toLowerCase())) || ''; }
 function verImg(url) { $('viewerImg').src = url; $('viewer').classList.add('on'); }
+// Comprobante guardado: PDF (liga que abre el archivo) o imagen (miniatura que abre el visor)
+const esPdf = url => /\.pdf(\?|$)/i.test(decodeURIComponent(String(url || '')));
+function comprobanteHtml(url, txt) {
+  if (esPdf(url)) return `<a class="pdfc" href="${esc(url)}" target="_blank" rel="noopener"><b>📄</b><span>${txt} (PDF)</span></a>`;
+  return `<div class="comp" onclick="verImg('${esc(url)}')"><img src="${esc(url)}" alt="" loading="lazy" onerror="this.style.height='50px';this.nextElementSibling.textContent='⚠️ No se pudo cargar la imagen'"><span>🧾 ${txt}</span></div>`;
+}
 
 // ══ ACCESO ══
 document.addEventListener('fb-auth', e => { if (e.detail) entrarConCuenta(e.detail); else mostrarLogin(); });
@@ -796,7 +806,7 @@ function listaHtml(arr, icono, vacio) {
         ${p.concepto ? `<span class="tag">${esc(p.concepto)}</span>` : ''}
         ${p.who ? `<span class="tag">👤 ${esc(p.who)}</span>` : ''}
       </div>
-      ${p.imgUrl ? `<div class="comp" onclick="verImg('${esc(p.imgUrl)}')"><img src="${esc(p.imgUrl)}" alt="" loading="lazy" onerror="this.style.height='50px';this.nextElementSibling.textContent='⚠️ No se pudo cargar la imagen'"><span>🧾 Ver comprobante completo</span></div>` : ''}
+      ${p.imgUrl ? comprobanteHtml(p.imgUrl, 'Ver comprobante completo') : ''}
       <div class="acts">
         <button onclick="cambiarMetodo('${esc(p._key)}','${mt === 'cajero' ? 'transferencia' : 'cajero'}')">${mt === 'cajero' ? '🔁 Marcar transferencia' : '🏧 Marcar cajero'}</button>
         <button class="del" onclick="borrarPago('${esc(p._key)}')">🗑</button>
@@ -921,10 +931,10 @@ async function borrarCat(id) {
 
 // ══ REGISTRAR PAGO ══
 function abrirRegistro(datos) {
-  foto = null; fotoUrl = null;
+  foto = null; fotoUrl = null; fotoMime = 'image/jpeg';
   $('sheetBox').innerHTML = `
     <div class="hd"><b>➕ Registrar pago</b><button onclick="cerrarRegistro()">✕</button></div>
-    <div class="g2"><button class="btn" onclick="$('camIn').click()">📷 Cámara</button><button class="btn" onclick="$('galIn').click()">🖼 Galería</button></div>
+    <div class="g3"><button class="btn" onclick="$('camIn').click()">📷 Cámara</button><button class="btn" onclick="$('galIn').click()">🖼 Galería</button><button class="btn" onclick="$('pdfIn').click()">📄 PDF</button></div>
     <div id="rFoto"></div><div id="rMsg"></div>
     ${formPago(datos || {})}`;
   $('sheet').classList.add('on');
@@ -1017,19 +1027,32 @@ function compressImage(dataUrl, maxBytes, quality) {
     img.src = dataUrl;
   });
 }
+// El proxy de IA acepta hasta 5 MB por petición (base64 crece 4/3): PDF de máximo 3.5 MB.
+const MAX_PDF = 3.5 * 1024 * 1024;
 function onFoto(input) {
   const file = input.files[0]; input.value = ''; if (!file) return;
   const rd = new FileReader();
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    if (file.size > MAX_PDF) return toast('⚠️ El PDF pesa ' + (file.size / 1048576).toFixed(1) + ' MB; el máximo es 3.5 MB');
+    rd.onload = e => {
+      foto = String(e.target.result).split(',')[1]; fotoUrl = null; fotoMime = 'application/pdf';
+      $('rFoto').innerHTML = `<div class="pdfc"><b>📄</b><span>${esc(file.name)} · ${Math.max(1, Math.round(file.size / 1024))} KB</span></div>`;
+      $('rMsg').innerHTML = '<div class="banner">🤖 Leyendo el PDF…</div>';
+      leerConIA(foto, fotoMime);
+    };
+    rd.readAsDataURL(file);
+    return;
+  }
   rd.onload = async e => {
     const comp = await compressImage(e.target.result, 1024 * 1024, 0.8);
-    foto = comp.split(',')[1]; fotoUrl = null;
+    foto = comp.split(',')[1]; fotoUrl = null; fotoMime = 'image/jpeg';
     $('rFoto').innerHTML = `<img class="prev" src="${comp}" alt="">`;
     $('rMsg').innerHTML = '<div class="banner">🤖 Leyendo el comprobante…</div>';
     leerConIA(foto);
   };
   rd.readAsDataURL(file);
 }
-async function leerConIA(b64) {
+async function leerConIA(b64, mime = 'image/jpeg') {
   const prompt = `Analiza este comprobante de PAGO y responde ÚNICAMENTE con JSON válido, sin markdown.
 Tipos (tipo_pago):
 - "tarjeta": pago a una tarjeta de crédito (PAGO DE TARJETA, PAGO APLICADO, abono a tarjeta) o una transferencia/SPEI enviada desde la app del banco para pagar una tarjeta.
@@ -1041,7 +1064,10 @@ Responde con este JSON exacto (OMITE campos vacíos, JSON compacto en una línea
 {"tipo_pago":"","fecha":"DD/MM/YYYY con año de 4 dígitos (13/nov/26 -> 13/11/2026)","hora":"HH:MM 24h","total":"número sin comas","moneda":"MXN o USD o EUR o GBP","metodo_pago":"transferencia (captura de app/banca en línea/SPEI) o cajero (ticket de cajero/practicaja, efectivo)","banco":"banco DESTINO o de la tarjeta","banco_origen":"banco desde el que salió el dinero","cuenta_origen":"últimos 4 de la cuenta origen","tarjeta_pagada":"últimos 4 de la tarjeta/cuenta destino","servicio":"empresa o escuela que recibe (CFE, Telmex, Agua, Colegio X, Administración Arthouse)","numero_servicio":"número de servicio, línea telefónica, contrato o matrícula","periodo":"periodo pagado ej Nov 2026","fecha_limite":"DD/MM/YYYY si aparece","departamento":"Casa, Arthouse o Townsquare si aparece","alumno":"nombre del alumno si es colegiatura","folio":"autorización, folio o referencia","concepto":"concepto"}`;
   try {
     const body = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, messages: [{ role: 'user', content: [
-      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }, { type: 'text', text: prompt } ] }] });
+      mime === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
+        : { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+      { type: 'text', text: prompt } ] }] });
     // claude-proxy solo atiende a miembros con sesión (token de Auth + App Check)
     const headers = { 'Content-Type': 'application/json' };
     const u = FB.auth.currentUser;
@@ -1074,9 +1100,10 @@ Responde con este JSON exacto (OMITE campos vacíos, JSON compacto en una línea
 function b64toBlob(b64, mime) { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return new Blob([a], { type: mime }); }
 async function subirFoto() {
   if (fotoUrl) return fotoUrl;
-  // Carpeta pagos/ del Storage propio (storage.rules: solo Alex y Gaby, solo imágenes)
-  const r = FB.sRef(FB.storage, `pagos/${Date.now()}_${userName}.jpg`);
-  await Promise.race([FB.uploadBytes(r, b64toBlob(foto, 'image/jpeg')), new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout subiendo imagen')), 20000))]);
+  // Carpeta pagos/ del Storage propio (storage.rules: solo Alex y Gaby, solo imágenes o PDF)
+  const pdf = fotoMime === 'application/pdf';
+  const r = FB.sRef(FB.storage, `pagos/${Date.now()}_${userName}.${pdf ? 'pdf' : 'jpg'}`);
+  await Promise.race([FB.uploadBytes(r, b64toBlob(foto, fotoMime), { contentType: fotoMime }), new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout subiendo ' + (pdf ? 'PDF' : 'imagen'))), pdf ? 45000 : 20000))]);
   fotoUrl = await FB.getDownloadURL(r);
   return fotoUrl;
 }
@@ -1109,7 +1136,7 @@ async function guardarPago() {
     hora: normHora(val('p_hora')), folio: val('p_folio').slice(0, 40), concepto: val('p_concepto').slice(0, 200),
   };
   try {
-    if (foto) { btn.textContent = 'Subiendo imagen…'; try { pago.imgUrl = await subirFoto(); } catch(e) { toast('⚠️ ' + e.message + ' — se guarda sin imagen'); } }
+    if (foto) { btn.textContent = fotoMime === 'application/pdf' ? 'Subiendo PDF…' : 'Subiendo imagen…'; try { pago.imgUrl = await subirFoto(); } catch(e) { toast('⚠️ ' + e.message + ' — se guarda sin imagen'); } }
     await FB.push(FB.ref(FB.db, 'pagos'), pago);
     toast('✅ Pago guardado');
     cerrarRegistro();
