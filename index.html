@@ -472,7 +472,7 @@ function detallePagoMini(p, onclick) {
 }
 
 // ══ ESTADOS DE CUENTA: lo que hay que pagar por tarjeta, menos los abonos ══
-// `pagos/_edocta/{id}`: { banco, tarjeta (últ. 4), fecha_corte, fecha_limite, monto (pago para no generar intereses), minimo }.
+// `pagos/_edocta/{id}`: { banco, tarjeta (últ. 4), fecha_corte, fecha_limite, monto (pago para no generar intereses), minimo, minimo_msi (mínimo + compras y cargos diferidos a meses) }.
 // Abonos = pagos de tarjeta a esa tarjeta con fecha DESPUÉS del corte (y hasta el corte siguiente, si ya hay uno).
 const ult4 = v => soloDigitos(v).slice(-4);
 function abonosDe(e, siguiente) {
@@ -516,12 +516,16 @@ function vPorPagarTarjetas() {
   est.forEach(({ e, abonos, abonado, falta, txt, cls, minimoCubierto, otrasMonedas }) => {
     if (editEdo === e._id) { h += formEdo(e); return; }
     const pct = e.monto ? Math.min(100, Math.round(abonado / e.monto * 100)) : 0;
+    // Los tres montos del estado de cuenta, de mayor a menor
+    const niveles = [{ k: 'monto', txt: 'Para no generar intereses', monto: e.monto },
+      { k: 'minimo_msi', txt: 'Mínimo + compras a meses', monto: e.minimo_msi },
+      { k: 'minimo', txt: 'Pago mínimo', monto: e.minimo }].filter(n => n.monto > 0);
     h += `<div style="padding:10px 0;border-top:1px solid var(--border)">
       <div class="row"><div class="n">💳 ${nombreTarjeta(e)}</div><div class="m" style="color:${falta > 0 ? 'var(--text)' : 'var(--green)'}">${falta > 0 ? 'Falta ' + fmt(falta) : '✅'}</div></div>
-      <div style="font-size:12px;color:var(--text2);margin-top:2px">Corte ${esc(e.fecha_corte)} · Límite ${esc(e.fecha_limite || '—')} · A pagar ${fmt(e.monto)}${e.minimo ? ' · Mínimo ' + fmt(e.minimo) : ''}</div>
-      <div style="height:8px;border-radius:4px;background:var(--surface2);margin:7px 0 3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${falta > 0 ? 'var(--accent)' : 'var(--green)'}"></div></div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px">Corte ${esc(e.fecha_corte)} · Límite ${esc(e.fecha_limite || '—')}</div>
+      <div style="position:relative;height:8px;border-radius:4px;background:var(--surface2);margin:7px 0 3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${falta > 0 ? 'var(--accent)' : 'var(--green)'}"></div>${niveles.filter(n => n.k !== 'monto').map(n => `<div title="${n.txt}" style="position:absolute;top:0;bottom:0;left:${Math.min(99, n.monto / e.monto * 100)}%;width:2px;background:var(--text2)"></div>`).join('')}</div>
       <div class="row"><div class="estado" style="color:${colorEstado(cls)};flex:1;margin:0">${txt}</div><div style="font-size:12px;color:var(--text2)">Abonado ${fmt(abonado)} (${pct}%)</div></div>
-      ${minimoCubierto === false && falta > 0 ? `<div style="font-size:12px;color:var(--orange);margin-top:2px">Falta ${fmt(e.minimo - abonado)} para cubrir el mínimo</div>` : ''}
+      ${niveles.map(n => `<div class="row" style="padding:1px 0;font-size:12px"><div class="n" style="font-weight:500;color:var(--text2)">${n.txt} ${fmt(n.monto)}</div><div class="m" style="font-weight:600;color:${abonado >= n.monto ? 'var(--green)' : n.k === 'monto' ? 'var(--text)' : 'var(--orange)'}">${abonado >= n.monto ? '✅ cubierto' : 'falta ' + fmt(n.monto - abonado)}</div></div>`).join('')}
       ${abonos.map(p => `<div class="row" style="padding:2px 0 2px 22px;font-size:13px;color:var(--text2)"><div class="n" style="font-weight:500">${metodoPago(p) === 'cajero' ? '🏧 Efectivo' : '🔁 Transferencia'} · ${esc(String(p.fecha).slice(0, 5))}${p.who ? ' · ' + esc(p.who) : ''}</div><div class="m" style="font-weight:600">${(p.moneda || 'MXN') === 'MXN' ? '−' + fmt(p.cantidad) : esc(p.moneda) + ' ' + fmt(p.cantidad).slice(1)}</div></div>`).join('')}
       ${otrasMonedas ? `<div style="font-size:12px;color:var(--orange)">ℹ️ ${otrasMonedas} abono(s) en otra moneda no se restan.</div>` : ''}
       <div class="acts"><button onclick="abrirRegistro({tipo_pago:'tarjeta',banco:'${esc(e.banco)}',tarjeta:'${esc(ult4(e.tarjeta))}',total:'${falta || ''}'})">➕ Registrar abono</button><button onclick="editEdo='${esc(e._id)}';pintar()">✏️</button><button class="del" onclick="borrarEdo('${esc(e._id)}')">🗑</button></div>
@@ -543,6 +547,7 @@ function formEdo(e) {
       <div class="f"><label>Fecha límite de pago *</label><input id="e_limite" value="${v(e.fecha_limite)}" placeholder="DD/MM/AAAA"></div></div>
       <div class="g2"><div class="f"><label>Pago para no generar intereses *</label><input id="e_monto" value="${v(e.monto)}" type="number" inputmode="decimal" placeholder="0.00"></div>
       <div class="f"><label>Pago mínimo</label><input id="e_minimo" value="${v(e.minimo)}" type="number" inputmode="decimal" placeholder="0.00"></div></div>
+      <div class="f"><label>Pago mínimo + compras y cargos diferidos a meses</label><input id="e_minimo_msi" value="${v(e.minimo_msi)}" type="number" inputmode="decimal" placeholder="0.00"></div>
       <div class="acts"><button onclick="guardarEdo('${v(e._id || '')}')">💾 Guardar</button><button class="del" onclick="editEdo=null;pintar()">✕</button></div>
     </div></div>`;
 }
@@ -559,9 +564,13 @@ async function guardarEdo(id) {
   if (!monto) return toast('⚠️ Escribe el pago para no generar intereses');
   const minimo = val('e_minimo') ? validarMonto(val('e_minimo')) : null;
   if (val('e_minimo') && !minimo) return toast('⚠️ Pago mínimo inválido');
+  const minimo_msi = val('e_minimo_msi') ? validarMonto(val('e_minimo_msi')) : null;
+  if (val('e_minimo_msi') && !minimo_msi) return toast('⚠️ Pago mínimo + meses inválido');
+  if (minimo_msi && minimo_msi > monto) return toast('⚠️ Mínimo + meses no puede ser mayor que el pago para no generar intereses');
+  if (minimo && minimo_msi && minimo > minimo_msi) return toast('⚠️ El pago mínimo no puede ser mayor que mínimo + meses');
   const repetido = Object.entries(EDOCTA).find(([k, x]) => k !== id && ult4(x.tarjeta) === tarjeta && x.fecha_corte === corte);
   if (repetido) return toast('⚠️ Ya hay un estado de esa tarjeta con ese corte');
-  const data = { banco, tarjeta, fecha_corte: corte, fecha_limite: limite, monto, minimo, actualizado: Date.now(), por: userName };
+  const data = { banco, tarjeta, fecha_corte: corte, fecha_limite: limite, monto, minimo, minimo_msi, actualizado: Date.now(), por: userName };
   try {
     if (id) await FB.update(FB.ref(FB.db), Object.fromEntries(Object.entries(data).map(([k, x]) => ['pagos/_edocta/' + id + '/' + k, x])));
     else await FB.push(FB.ref(FB.db, 'pagos/_edocta'), data);
