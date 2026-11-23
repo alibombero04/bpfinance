@@ -448,9 +448,19 @@ function vInicio() {
   h += `</div>`;
   if (pagados.length) h += `<div class="card"><h3>✅ Ya pagados este periodo (${pagados.length})</h3><div class="tags">${pagados.map(({ s }) => `<span class="tag g">${esc(s.categoria === 'colegiatura' ? (s.alumno || s.servicio) : s.servicio)} · ${esc(s.categoria === 'colegiatura' ? s.servicio : s.propiedad)}</span>`).join('')}</div></div>`;
   h += `<div class="card"><h3>💰 Pagos de ${MESES[hoy.getMonth()]} ${hoy.getFullYear()}</h3>${porTipo.length
-      ? porTipo.map(([t, a]) => `<div class="row" style="padding:4px 0"><div class="n" style="font-weight:600">${TIPOS[t].icon} ${TIPOS[t].label} (${a.length})</div><div class="m">${fmt(sumaMXN(a))}</div></div>`).join('')
+      ? porTipo.map(([t, a]) => `<div class="row" style="padding:4px 0;margin-top:4px"><div class="n" style="font-weight:600">${TIPOS[t].icon} ${TIPOS[t].label} (${a.length})</div><div class="m">${montoResumen(a)}</div></div>`
+          + ordenarPorFecha(a).map(p => detallePagoMini(p, t === 'tarjeta' ? "ir('tarjetas')" : '')).join('')).join('')
       : '<div class="empty" style="padding:10px">Sin pagos registrados este mes</div>'}</div>`;
   return h;
+}
+
+// Renglón chico con el detalle de un pago (Inicio): a quién/qué tarjeta, fecha y monto
+const ordenarPorFecha = arr => arr.slice().sort((a, b) => (fechaDeDMY(b.fecha) || 0) - (fechaDeDMY(a.fecha) || 0) || (b.ts || 0) - (a.ts || 0));
+function detallePagoMini(p, onclick) {
+  const titulo = tituloPago(p).replace(/^\S+\s/, ''); // sin el ícono del tipo
+  const extra = tipoPago(p) === 'servicio' && p.departamento ? ' · ' + esc(p.departamento) : '';
+  const dia = String(p.fecha || '').slice(0, 5);
+  return `<div class="row" style="padding:3px 0 3px 22px;font-size:13px;color:var(--text2)${onclick ? ';cursor:pointer' : ''}"${onclick ? ` onclick="${onclick}"` : ''}><div class="n" style="font-weight:500;min-width:0">${titulo}${extra}${dia ? ' · ' + esc(dia) : ''}</div><div class="m" style="font-weight:600">${(p.moneda || 'MXN') === 'MXN' ? fmt(p.cantidad) : esc(p.moneda) + ' ' + fmt(p.cantidad).slice(1)}</div></div>`;
 }
 
 // ══ VISTA: LISTA DE PAGOS (tarjetas / propiedades) ══
@@ -465,10 +475,18 @@ function aplicarMetodo(arr) {
 }
 function vPagos(cond, cual) {
   let arr = listaPagos().filter(cond);
-  let h = filasMetodo(arr);
+  const hoy = new Date(), mesPas = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const etiq = { mes: 'Este mes · ' + MESES[hoy.getMonth()], anterior: 'Mes pasado · ' + MESES[mesPas.getMonth()], anio: 'Este año', todo: 'Todo' };
+  let h = `<div class="chips">${Object.keys(PERIODOS).map(k => chip(filtro.periodo === k, `setF('periodo','${k}')`, etiq[k] + ' (' + arr.filter(p => enPeriodo(p, k)).length + ')')).join('')}</div>`;
+  arr = arr.filter(p => enPeriodo(p, filtro.periodo));
+  h += filasMetodo(arr);
   arr = aplicarMetodo(arr);
   h += `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN</small></div><div><b>${new Set(arr.map(p => p.tarjeta || p.banco)).size}</b><small>Tarjetas</small></div></div>`;
-  return h + listaHtml(arr, '💳', 'Sin pagos de tarjeta todavía.<br>Toca ＋ para registrar uno.');
+  const grupos = {};
+  arr.forEach(p => { const k = tituloPago(p); (grupos[k] = grupos[k] || []).push(p); });
+  if (Object.keys(grupos).length > 1) h += `<div class="card"><h3>💳 Por tarjeta</h3>` + Object.entries(grupos).sort((a, b) => sumaMXN(b[1]) - sumaMXN(a[1])).map(([k, a]) => filaResumen(k, a)).join('') + `</div>`;
+  const vacio = filtro.periodo === 'todo' ? 'Sin pagos de tarjeta todavía.<br>Toca ＋ para registrar uno.' : 'Sin pagos de tarjeta en este periodo.<br>Toca ＋ para registrar uno.';
+  return h + listaHtml(arr, '💳', vacio);
 }
 function vPropiedades() {
   let arr = listaPagos().filter(p => ['servicio', 'mantenimiento'].includes(tipoPago(p)));
