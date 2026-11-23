@@ -638,6 +638,31 @@ function agrupar(arr, campo, vacio) {
 }
 const sumaPesos = arr => Math.round(arr.reduce((s, r) => s + (enPesos(r) || 0), 0) * 100) / 100;
 const filaG = (txt, arr, onclick = '') => `<div class="row" style="padding:6px 0;border-top:1px solid var(--border)${onclick ? ';cursor:pointer' : ''}"${onclick ? ` onclick="${onclick}"` : ''}><div class="n" style="font-weight:600">${txt} <span style="font-weight:500;color:var(--text2)">(${arr.length})</span></div><div class="m">${fmt(sumaPesos(arr))}</div></div>`;
+// Detalle de un gasto de NoteScanner (solo lectura) con la foto de su ticket.
+function nsVer(i) {
+  const r = NSG.lista && NSG.lista[i];
+  if (!r) return;
+  const ps = enPesos(r), ext = (r.moneda || 'MXN') !== 'MXN';
+  const fila = (k, v) => v === '' || v == null ? '' : `<div class="row" style="padding:6px 0;border-top:1px solid var(--border)"><div class="n" style="font-weight:500;color:var(--text2)">${k}</div><div class="m" style="font-weight:600;text-align:right">${v}</div></div>`;
+  const lugarOrig = String(r.lugar || '').trim();
+  const img = r.imgUrl || r.imgUrl_legacy || '';
+  $('sheetBox').innerHTML = `
+    <div class="hd"><b>🧾 ${esc(r.establecimiento || 'Gasto')}</b><button onclick="cerrarRegistro()">✕</button></div>
+    <div class="stats"><div><b>${ext ? esc(r.moneda) + ' ' + fmt(r.cantidad).slice(1) : fmt(r.cantidad)}</b><small>${ext ? (ps === null ? 'sin tipo de cambio' : '≈ ' + fmt(ps)) : 'Total'}</small></div><div><b>${esc(r.fecha || '—')}</b><small>Fecha</small></div></div>
+    ${img ? `<div class="comp" onclick="verImg('${esc(img)}')"><img src="${esc(img)}" alt="" style="height:260px" onerror="this.style.height='50px';this.nextElementSibling.textContent='⚠️ No se pudo cargar la foto'"><span>🔍 Ver ticket completo</span></div>` : '<div class="banner">Este gasto no tiene foto del ticket.</div>'}
+    <div class="card" style="margin:0">
+      ${fila('👤 Quién', esc(r.who || '—'))}
+      ${fila('📂 Categoría', esc(r._cat) + (r.subcategoria ? ' → ' + esc(r.subcategoria) : ''))}
+      ${r.tipo && r.tipo !== r.subcategoria ? fila('Tipo en NoteScanner', esc(r.tipo)) : ''}
+      ${fila('📍 Lugar', esc(r._ciudad || '—') + (r._pais ? ', ' + esc(r._pais) : ''))}
+      ${lugarOrig && norm(lugarOrig) !== norm(r._ciudad) ? fila('Lugar capturado', esc(lugarOrig)) : ''}
+      ${fila('💳 Tarjeta', esc(r.tarjeta || '—'))}
+      ${r.subtotal ? fila('Subtotal', fmt(r.subtotal)) : ''}
+      ${r.propina ? fila('Propina', fmt(r.propina)) : ''}
+    </div>
+    <div style="font-size:11px;color:var(--text3);text-align:center">Solo lectura. Si algo está mal, pide que se corrija en NoteScanner.</div>`;
+  $('sheet').classList.add('on');
+}
 function nsFiltro(campo, i) {
   const v = i < 0 ? '' : NSG.opciones[campo][i];
   filtro[campo] = filtro[campo] === v ? '' : v;
@@ -705,6 +730,24 @@ function vGastos() {
     h += agrupar(g.recs, '_sub', 'Sin subcategoría').map(x => `<div class="row" style="padding:4px 0 4px 14px"><div class="n" style="font-weight:500">${esc(x.nombre)} <span style="color:var(--text2)">(${x.recs.length})</span></div><div class="m" style="font-weight:500">${fmt(x.total)}</div></div>`).join('');
   });
   h += `<div style="font-size:11px;color:var(--text3);margin-top:6px">${filtro.categoria ? 'Toca la categoría otra vez para quitar el filtro.' : 'Toca una categoría para ver solo esa.'}</div></div>`;
+  // Detalle: los gastos uno por uno (al filtrar, o si son pocos). Tocar uno abre su ticket.
+  const conFiltro = filtro.persona || filtro.pais || filtro.ciudad || filtro.categoria;
+  if (conFiltro || arr.length <= 40) {
+    const llave = JSON.stringify(filtro);
+    if (NSG.limKey !== llave) { NSG.limKey = llave; NSG.limite = 50; }
+    NSG.lista = arr.slice().sort((a, b) => (fechaDeDMY(b.fecha) || 0) - (fechaDeDMY(a.fecha) || 0) || (b.ts || 0) - (a.ts || 0));
+    h += `<div class="card"><h3>🧾 Gastos uno por uno (${NSG.lista.length})</h3>` + NSG.lista.slice(0, NSG.limite).map((r, i) => {
+      const ps = enPesos(r), ext = (r.moneda || 'MXN') !== 'MXN';
+      return `<div class="row" style="padding:7px 0;border-top:1px solid var(--border);cursor:pointer;align-items:flex-start" onclick="nsVer(${i})">
+        <div class="n" style="font-weight:600;min-width:0">${esc(r.establecimiento || 'Sin establecimiento')}${r.imgUrl ? ' <span style="font-size:12px">🧾</span>' : ''}
+          <div style="font-size:12px;font-weight:500;color:var(--text2);margin-top:2px">${esc(r.fecha || '')} · 👤 ${esc(r.who || '—')} · 📍 ${esc(r._ciudad || '—')} · ${esc(r._sub || r._cat)}</div></div>
+        <div class="m" style="text-align:right">${ext ? `${esc(r.moneda)} ${fmt(r.cantidad).slice(1)}<div style="font-size:12px;color:var(--text2)">${ps === null ? '—' : '≈ ' + fmt(ps)}</div>` : fmt(r.cantidad)}</div></div>`;
+    }).join('')
+      + (NSG.lista.length > NSG.limite ? `<button class="btn-lite" style="margin-top:8px" onclick="NSG.limite+=50;pintar()">Ver ${Math.min(50, NSG.lista.length - NSG.limite)} más</button>` : '')
+      + `<div style="font-size:11px;color:var(--text3);margin-top:6px">Toca un gasto para ver su ticket. Los más recientes primero.</div></div>`;
+  } else {
+    h += `<div style="text-align:center;font-size:12px;color:var(--text3);margin:-4px 0 10px">🧾 Toca una persona, ciudad o categoría para ver los gastos uno por uno.</div>`;
+  }
   // Por tarjeta
   h += `<div class="card"><h3>💳 Por tarjeta</h3>` + agrupar(arr, 'tarjeta', 'Sin tarjeta').map(x => filaG(esc(x.nombre), x.recs)).join('') + `</div>`;
   // Monedas: lo original y su equivalente en pesos
