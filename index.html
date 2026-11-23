@@ -264,9 +264,10 @@ const FRECUENCIAS = { mensual: { label: 'Mensual', meses: 1 }, bimestral: { labe
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 let userName = '', vista = 'inicio';
-let PAGOS = {}, CATALOGO = {};
+let PAGOS = {}, CATALOGO = {}, EDOCTA = {};
 const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '', categoria: '' };
 let filtro = { ...FILTRO_INICIAL };
+let editEdo = null; // id del estado de cuenta en edición o 'nuevo'
 let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
 let foto = null, fotoUrl = null, fotoMime = 'image/jpeg'; // fotoMime: image/jpeg o application/pdf
 
@@ -369,8 +370,9 @@ function escuchar() {
   FB.onValue(FB.ref(FB.db, 'pagos'), snap => {
     const v = snap.val() || {};
     CATALOGO = v._catalogo || {};
+    EDOCTA = v._edocta || {};
     PAGOS = {};
-    Object.entries(v).forEach(([k, p]) => { if (k !== '_catalogo' && p && p.cantidad > 0) PAGOS[k] = p; });
+    Object.entries(v).forEach(([k, p]) => { if (k[0] !== '_' && p && p.cantidad > 0) PAGOS[k] = p; });
     pintar();
   }, err => {
     $('main').innerHTML = `<div class="banner err">❌ No se pudieron leer los pagos: ${esc(err.message)}</div>`;
@@ -380,7 +382,7 @@ const listaPagos = () => Object.entries(PAGOS).map(([k, p]) => ({ _key: k, ...p 
   .sort((a, b) => (fechaDeDMY(b.fecha) || 0) - (fechaDeDMY(a.fecha) || 0) || (b.ts || 0) - (a.ts || 0));
 
 // ══ NAVEGACION ══
-function ir(v) { vista = v; filtro = { ...FILTRO_INICIAL }; editCat = null; pintar(); $('main').scrollTop = 0; }
+function ir(v) { vista = v; filtro = { ...FILTRO_INICIAL }; editCat = null; editEdo = null; pintar(); $('main').scrollTop = 0; }
 function setF(k, v) { filtro[k] = v; pintar(); }
 function pintar() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === vista));
@@ -430,12 +432,18 @@ function vInicio() {
   const hoy = new Date();
   const delMes = listaPagos().filter(p => { const f = fechaDeDMY(p.fecha); return f && f.getMonth() === hoy.getMonth() && f.getFullYear() === hoy.getFullYear(); });
   const porTipo = Object.keys(TIPOS).map(t => [t, delMes.filter(p => tipoPago(p) === t)]).filter(([, a]) => a.length);
-  const porPagar = pend.reduce((s, x) => s + (parseFloat(x.s.monto) || 0), 0);
+  const tarjPend = estadosVigentes().filter(x => x.falta > 0);
+  const porPagar = pend.reduce((s, x) => s + (parseFloat(x.s.monto) || 0), 0) + tarjPend.reduce((s, x) => s + x.falta, 0);
   let h = `<div class="stats">
       <div><b>${fmt(sumaMXN(delMes))}</b><small>Pagado en ${MESES[hoy.getMonth()]}</small></div>
       <div><b>${fmt(porPagar)}</b><small>Por pagar (aprox.)</small></div>
-      <div><b>${pend.filter(x => x.e.dias < 0).length}</b><small>Vencidos</small></div>
+      <div><b>${pend.filter(x => x.e.dias < 0).length + tarjPend.filter(x => x.dias !== null && x.dias < 0).length}</b><small>Vencidos</small></div>
     </div>`;
+  if (tarjPend.length) h += `<div class="card" style="cursor:pointer" onclick="ir('tarjetas')"><h3>💳 Tarjetas por pagar</h3>` + tarjPend.map(x => `
+      <div style="padding:6px 0;border-top:1px solid var(--border)">
+        <div class="row"><div class="n">${nombreTarjeta(x.e)}</div><div class="m">Falta ${fmt(x.falta)}</div></div>
+        <div class="row"><div class="estado" style="color:${colorEstado(x.cls)};flex:1;margin:0">${x.txt}</div><div style="font-size:12px;color:var(--text2)">Abonado ${fmt(x.abonado)} de ${fmt(x.e.monto)}</div></div>
+      </div>`).join('') + `</div>`;
   h += `<div class="card"><h3>📅 Próximos pagos</h3>`;
   h += pend.length ? pend.map(({ id, s, e }) => `
       <div style="padding:8px 0;border-top:1px solid var(--border)">
@@ -463,6 +471,109 @@ function detallePagoMini(p, onclick) {
   return `<div class="row" style="padding:3px 0 3px 22px;font-size:13px;color:var(--text2)${onclick ? ';cursor:pointer' : ''}"${onclick ? ` onclick="${onclick}"` : ''}><div class="n" style="font-weight:500;min-width:0">${titulo}${extra}${dia ? ' · ' + esc(dia) : ''}</div><div class="m" style="font-weight:600">${(p.moneda || 'MXN') === 'MXN' ? fmt(p.cantidad) : esc(p.moneda) + ' ' + fmt(p.cantidad).slice(1)}</div></div>`;
 }
 
+// ══ ESTADOS DE CUENTA: lo que hay que pagar por tarjeta, menos los abonos ══
+// `pagos/_edocta/{id}`: { banco, tarjeta (últ. 4), fecha_corte, fecha_limite, monto (pago para no generar intereses), minimo }.
+// Abonos = pagos de tarjeta a esa tarjeta con fecha DESPUÉS del corte (y hasta el corte siguiente, si ya hay uno).
+const ult4 = v => soloDigitos(v).slice(-4);
+function abonosDe(e, siguiente) {
+  const corte = fechaDeDMY(e.fecha_corte), fin = siguiente ? fechaDeDMY(siguiente.fecha_corte) : null;
+  const t4 = ult4(e.tarjeta);
+  const mismoBancoUnica = Object.values(EDOCTA).filter(x => norm(x.banco) === norm(e.banco)).map(x => ult4(x.tarjeta));
+  return listaPagos().filter(p => {
+    if (tipoPago(p) !== 'tarjeta') return false;
+    const pt = ult4(p.tarjeta);
+    // sin últimos 4: cuenta solo si el banco coincide y ese banco tiene una sola tarjeta dada de alta
+    if (pt ? pt !== t4 : !(norm(p.banco) === norm(e.banco) && new Set(mismoBancoUnica).size === 1)) return false;
+    const f = fechaDeDMY(p.fecha);
+    return f && corte && f > corte && (!fin || f <= fin);
+  }).sort((a, b) => fechaDeDMY(a.fecha) - fechaDeDMY(b.fecha));
+}
+// Estado de cuenta vigente de cada tarjeta (el de corte más reciente) con lo abonado y lo que falta
+function estadosVigentes() {
+  const porTarjeta = {};
+  Object.entries(EDOCTA).forEach(([id, e]) => { (porTarjeta[ult4(e.tarjeta)] = porTarjeta[ult4(e.tarjeta)] || []).push({ _id: id, ...e }); });
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  return Object.values(porTarjeta).map(lista => {
+    lista.sort((a, b) => fechaDeDMY(b.fecha_corte) - fechaDeDMY(a.fecha_corte));
+    const e = lista[0], abonos = abonosDe(e, null);
+    const abonado = sumaMXN(abonos), falta = Math.max(0, Math.round(((e.monto || 0) - abonado) * 100) / 100);
+    const lim = fechaDeDMY(e.fecha_limite), dias = lim ? Math.round((lim - hoy) / 86400000) : null;
+    let txt, cls;
+    if (falta <= 0) { txt = '✅ Liquidado'; cls = 'g'; }
+    else if (dias === null) { txt = '⚪ Sin fecha límite'; cls = ''; }
+    else if (dias < 0) { txt = `🔴 Venció hace ${-dias} día${dias === -1 ? '' : 's'}`; cls = 'r'; }
+    else if (dias <= 5) { txt = dias === 0 ? '🟡 Vence hoy' : `🟡 Vence en ${dias} día${dias === 1 ? '' : 's'}`; cls = 'o'; }
+    else { txt = `⚪ Vence el ${esc(e.fecha_limite)}`; cls = ''; }
+    const minimoCubierto = e.minimo ? abonado >= e.minimo : null;
+    return { e, abonos, abonado, falta, dias, txt, cls, minimoCubierto, otrasMonedas: abonos.filter(p => (p.moneda || 'MXN') !== 'MXN').length };
+  }).sort((a, b) => (a.falta > 0 ? 0 : 1) - (b.falta > 0 ? 0 : 1) || (fechaDeDMY(a.e.fecha_limite) || 0) - (fechaDeDMY(b.e.fecha_limite) || 0));
+}
+const nombreTarjeta = e => `${esc(e.banco || 'Tarjeta')} ****${esc(ult4(e.tarjeta))}`;
+function vPorPagarTarjetas() {
+  const est = estadosVigentes();
+  let h = `<div class="card"><h3>🧾 Por pagar (estado de cuenta)</h3>`;
+  if (!est.length && editEdo !== 'nuevo') h += `<div class="empty" style="padding:10px">Captura el estado de cuenta de cada tarjeta (pago para no generar intereses y fecha límite) y aquí se irán restando los abonos que registres.</div>`;
+  est.forEach(({ e, abonos, abonado, falta, txt, cls, minimoCubierto, otrasMonedas }) => {
+    if (editEdo === e._id) { h += formEdo(e); return; }
+    const pct = e.monto ? Math.min(100, Math.round(abonado / e.monto * 100)) : 0;
+    h += `<div style="padding:10px 0;border-top:1px solid var(--border)">
+      <div class="row"><div class="n">💳 ${nombreTarjeta(e)}</div><div class="m" style="color:${falta > 0 ? 'var(--text)' : 'var(--green)'}">${falta > 0 ? 'Falta ' + fmt(falta) : '✅'}</div></div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px">Corte ${esc(e.fecha_corte)} · Límite ${esc(e.fecha_limite || '—')} · A pagar ${fmt(e.monto)}${e.minimo ? ' · Mínimo ' + fmt(e.minimo) : ''}</div>
+      <div style="height:8px;border-radius:4px;background:var(--surface2);margin:7px 0 3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${falta > 0 ? 'var(--accent)' : 'var(--green)'}"></div></div>
+      <div class="row"><div class="estado" style="color:${colorEstado(cls)};flex:1;margin:0">${txt}</div><div style="font-size:12px;color:var(--text2)">Abonado ${fmt(abonado)} (${pct}%)</div></div>
+      ${minimoCubierto === false && falta > 0 ? `<div style="font-size:12px;color:var(--orange);margin-top:2px">Falta ${fmt(e.minimo - abonado)} para cubrir el mínimo</div>` : ''}
+      ${abonos.map(p => `<div class="row" style="padding:2px 0 2px 22px;font-size:13px;color:var(--text2)"><div class="n" style="font-weight:500">${metodoPago(p) === 'cajero' ? '🏧 Efectivo' : '🔁 Transferencia'} · ${esc(String(p.fecha).slice(0, 5))}${p.who ? ' · ' + esc(p.who) : ''}</div><div class="m" style="font-weight:600">${(p.moneda || 'MXN') === 'MXN' ? '−' + fmt(p.cantidad) : esc(p.moneda) + ' ' + fmt(p.cantidad).slice(1)}</div></div>`).join('')}
+      ${otrasMonedas ? `<div style="font-size:12px;color:var(--orange)">ℹ️ ${otrasMonedas} abono(s) en otra moneda no se restan.</div>` : ''}
+      <div class="acts"><button onclick="abrirRegistro({tipo_pago:'tarjeta',banco:'${esc(e.banco)}',tarjeta:'${esc(ult4(e.tarjeta))}',total:'${falta || ''}'})">➕ Registrar abono</button><button onclick="editEdo='${esc(e._id)}';pintar()">✏️</button><button class="del" onclick="borrarEdo('${esc(e._id)}')">🗑</button></div>
+    </div>`;
+  });
+  h += editEdo === 'nuevo' ? formEdo({}) : `<div class="acts"><button onclick="editEdo='nuevo';pintar()">➕ Capturar estado de cuenta</button></div>`;
+  return h + `</div>`;
+}
+function formEdo(e) {
+  const v = x => esc(x == null ? '' : x);
+  const bancos = [...new Set([...Object.values(EDOCTA).map(x => x.banco), ...listaPagos().filter(p => tipoPago(p) === 'tarjeta').map(p => p.banco)].filter(Boolean))];
+  return `<div class="card" style="background:var(--surface2);margin-top:8px">
+    <b>${e._id ? '✏️ Editar estado de cuenta' : '➕ Nuevo estado de cuenta'}</b>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <div class="g2"><div class="f"><label>Banco *</label><input id="e_banco" value="${v(e.banco)}" list="e_bancos" placeholder="Santander, Amex…"></div>
+      <div class="f"><label>Tarjeta (últ. 4) *</label><input id="e_tarjeta" value="${v(e.tarjeta)}" inputmode="numeric" maxlength="4" placeholder="1234"></div></div>
+      <datalist id="e_bancos">${bancos.map(b => `<option>${esc(b)}</option>`).join('')}</datalist>
+      <div class="g2"><div class="f"><label>Fecha de corte *</label><input id="e_corte" value="${v(e.fecha_corte)}" placeholder="DD/MM/AAAA"></div>
+      <div class="f"><label>Fecha límite de pago *</label><input id="e_limite" value="${v(e.fecha_limite)}" placeholder="DD/MM/AAAA"></div></div>
+      <div class="g2"><div class="f"><label>Pago para no generar intereses *</label><input id="e_monto" value="${v(e.monto)}" type="number" inputmode="decimal" placeholder="0.00"></div>
+      <div class="f"><label>Pago mínimo</label><input id="e_minimo" value="${v(e.minimo)}" type="number" inputmode="decimal" placeholder="0.00"></div></div>
+      <div class="acts"><button onclick="guardarEdo('${v(e._id || '')}')">💾 Guardar</button><button class="del" onclick="editEdo=null;pintar()">✕</button></div>
+    </div></div>`;
+}
+async function guardarEdo(id) {
+  const val = x => ($(x) ? $(x).value : '').trim();
+  const banco = val('e_banco').slice(0, 60), tarjeta = soloDigitos(val('e_tarjeta'));
+  if (!banco) return toast('⚠️ Escribe el banco');
+  if (tarjeta.length !== 4) return toast('⚠️ La tarjeta son los últimos 4 dígitos');
+  const corte = validarFecha(val('e_corte')), limite = validarFecha(val('e_limite'));
+  if (!corte) return toast('⚠️ Fecha de corte inválida (DD/MM/AAAA)');
+  if (!limite) return toast('⚠️ Fecha límite inválida (DD/MM/AAAA)');
+  if (fechaDeDMY(limite) < fechaDeDMY(corte)) return toast('⚠️ La fecha límite es antes del corte');
+  const monto = validarMonto(val('e_monto'));
+  if (!monto) return toast('⚠️ Escribe el pago para no generar intereses');
+  const minimo = val('e_minimo') ? validarMonto(val('e_minimo')) : null;
+  if (val('e_minimo') && !minimo) return toast('⚠️ Pago mínimo inválido');
+  const repetido = Object.entries(EDOCTA).find(([k, x]) => k !== id && ult4(x.tarjeta) === tarjeta && x.fecha_corte === corte);
+  if (repetido) return toast('⚠️ Ya hay un estado de esa tarjeta con ese corte');
+  const data = { banco, tarjeta, fecha_corte: corte, fecha_limite: limite, monto, minimo, actualizado: Date.now(), por: userName };
+  try {
+    if (id) await FB.update(FB.ref(FB.db), Object.fromEntries(Object.entries(data).map(([k, x]) => ['pagos/_edocta/' + id + '/' + k, x])));
+    else await FB.push(FB.ref(FB.db, 'pagos/_edocta'), data);
+    editEdo = null; toast('✅ Estado de cuenta guardado'); pintar();
+  } catch(e) { toast('❌ ' + (/permission/i.test(e.message) ? 'Firebase no permite guardar (reglas)' : e.message)); }
+}
+async function borrarEdo(id) {
+  const e = EDOCTA[id];
+  if (!e || !confirm(`¿Borrar el estado de cuenta de ${e.banco} ****${ult4(e.tarjeta)} (corte ${e.fecha_corte})? Los abonos registrados no se borran.`)) return;
+  try { await FB.remove(FB.ref(FB.db, 'pagos/_edocta/' + id)); toast('🗑 Borrado'); } catch(err) { toast('❌ ' + err.message); }
+}
+
 // ══ VISTA: LISTA DE PAGOS (tarjetas / propiedades) ══
 function filasMetodo(arr) {
   const t = arr.filter(p => metodoPago(p) === 'transferencia'), c = arr.filter(p => metodoPago(p) === 'cajero');
@@ -477,7 +588,8 @@ function vPagos(cond, cual) {
   let arr = listaPagos().filter(cond);
   const hoy = new Date(), mesPas = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
   const etiq = { mes: 'Este mes · ' + MESES[hoy.getMonth()], anterior: 'Mes pasado · ' + MESES[mesPas.getMonth()], anio: 'Este año', todo: 'Todo' };
-  let h = `<div class="chips">${Object.keys(PERIODOS).map(k => chip(filtro.periodo === k, `setF('periodo','${k}')`, etiq[k] + ' (' + arr.filter(p => enPeriodo(p, k)).length + ')')).join('')}</div>`;
+  let h = cual === 'tarjetas' ? vPorPagarTarjetas() : '';
+  h += `<div class="chips">${Object.keys(PERIODOS).map(k => chip(filtro.periodo === k, `setF('periodo','${k}')`, etiq[k] + ' (' + arr.filter(p => enPeriodo(p, k)).length + ')')).join('')}</div>`;
   arr = arr.filter(p => enPeriodo(p, filtro.periodo));
   h += filasMetodo(arr);
   arr = aplicarMetodo(arr);
