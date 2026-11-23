@@ -499,7 +499,8 @@ function estadosVigentes() {
     const abonado = sumaMXN(abonos), falta = Math.max(0, Math.round(((e.monto || 0) - abonado) * 100) / 100);
     const lim = fechaDeDMY(e.fecha_limite), dias = lim ? Math.round((lim - hoy) / 86400000) : null;
     let txt, cls;
-    if (falta <= 0) { txt = '✅ Liquidado'; cls = 'g'; }
+    if (!(e.monto > 0)) { txt = '✅ Sin pago este periodo (no se usó)'; cls = 'g'; }
+    else if (falta <= 0) { txt = '✅ Liquidado'; cls = 'g'; }
     else if (dias === null) { txt = '⚪ Sin fecha límite'; cls = ''; }
     else if (dias < 0) { txt = `🔴 Venció hace ${-dias} día${dias === -1 ? '' : 's'}`; cls = 'r'; }
     else if (dias <= 5) { txt = dias === 0 ? '🟡 Vence hoy' : `🟡 Vence en ${dias} día${dias === 1 ? '' : 's'}`; cls = 'o'; }
@@ -515,7 +516,7 @@ function vPorPagarTarjetas() {
   if (!est.length && editEdo !== 'nuevo') h += `<div class="empty" style="padding:10px">Captura el estado de cuenta de cada tarjeta (pago para no generar intereses y fecha límite) y aquí se irán restando los abonos que registres.</div>`;
   est.forEach(({ e, abonos, abonado, falta, txt, cls, minimoCubierto, otrasMonedas }) => {
     if (editEdo === e._id) { h += formEdo(e); return; }
-    const pct = e.monto ? Math.min(100, Math.round(abonado / e.monto * 100)) : 0;
+    const pct = e.monto > 0 ? Math.min(100, Math.round(abonado / e.monto * 100)) : 100;
     // Los tres montos del estado de cuenta, de mayor a menor
     const niveles = [{ k: 'monto', txt: 'Para no generar intereses', monto: e.monto },
       { k: 'minimo_msi', txt: 'Mínimo + compras a meses', monto: e.minimo_msi },
@@ -524,7 +525,7 @@ function vPorPagarTarjetas() {
       <div class="row"><div class="n">💳 ${nombreTarjeta(e)}</div><div class="m" style="color:${falta > 0 ? 'var(--text)' : 'var(--green)'}">${falta > 0 ? 'Falta ' + fmt(falta) : '✅'}</div></div>
       <div style="font-size:12px;color:var(--text2);margin-top:2px">Corte ${esc(e.fecha_corte)} · Límite ${esc(e.fecha_limite || '—')}</div>
       <div style="position:relative;height:8px;border-radius:4px;background:var(--surface2);margin:7px 0 3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${falta > 0 ? 'var(--accent)' : 'var(--green)'}"></div>${niveles.filter(n => n.k !== 'monto').map(n => `<div title="${n.txt}" style="position:absolute;top:0;bottom:0;left:${Math.min(99, n.monto / e.monto * 100)}%;width:2px;background:var(--text2)"></div>`).join('')}</div>
-      <div class="row"><div class="estado" style="color:${colorEstado(cls)};flex:1;margin:0">${txt}</div><div style="font-size:12px;color:var(--text2)">Abonado ${fmt(abonado)} (${pct}%)</div></div>
+      <div class="row"><div class="estado" style="color:${colorEstado(cls)};flex:1;margin:0">${txt}</div>${e.monto > 0 ? `<div style="font-size:12px;color:var(--text2)">Abonado ${fmt(abonado)} (${pct}%)</div>` : abonado > 0 ? `<div style="font-size:12px;color:var(--text2)">Abonado ${fmt(abonado)}</div>` : ''}</div>
       ${niveles.map(n => `<div class="row" style="padding:1px 0;font-size:12px"><div class="n" style="font-weight:500;color:var(--text2)">${n.txt} ${fmt(n.monto)}</div><div class="m" style="font-weight:600;color:${abonado >= n.monto ? 'var(--green)' : n.k === 'monto' ? 'var(--text)' : 'var(--orange)'}">${abonado >= n.monto ? '✅ cubierto' : 'falta ' + fmt(n.monto - abonado)}</div></div>`).join('')}
       ${abonos.map(p => `<div class="row" style="padding:2px 0 2px 22px;font-size:13px;color:var(--text2)"><div class="n" style="font-weight:500">${metodoPago(p) === 'cajero' ? '🏧 Efectivo' : '🔁 Transferencia'} · ${esc(String(p.fecha).slice(0, 5))}${p.who ? ' · ' + esc(p.who) : ''}</div><div class="m" style="font-weight:600">${(p.moneda || 'MXN') === 'MXN' ? '−' + fmt(p.cantidad) : esc(p.moneda) + ' ' + fmt(p.cantidad).slice(1)}</div></div>`).join('')}
       ${otrasMonedas ? `<div style="font-size:12px;color:var(--orange)">ℹ️ ${otrasMonedas} abono(s) en otra moneda no se restan.</div>` : ''}
@@ -560,8 +561,10 @@ async function guardarEdo(id) {
   if (!corte) return toast('⚠️ Fecha de corte inválida (DD/MM/AAAA)');
   if (!limite) return toast('⚠️ Fecha límite inválida (DD/MM/AAAA)');
   if (fechaDeDMY(limite) < fechaDeDMY(corte)) return toast('⚠️ La fecha límite es antes del corte');
-  const monto = validarMonto(val('e_monto'));
-  if (!monto) return toast('⚠️ Escribe el pago para no generar intereses');
+  // Puede ser 0 cuando la tarjeta no se usó en el periodo
+  const montoTxt = val('e_monto');
+  const monto = /^0+([.,]0*)?$/.test(montoTxt) ? 0 : validarMonto(montoTxt);
+  if (monto === null) return toast('⚠️ Escribe el pago para no generar intereses (0 si no se usó)');
   const minimo = val('e_minimo') ? validarMonto(val('e_minimo')) : null;
   if (val('e_minimo') && !minimo) return toast('⚠️ Pago mínimo inválido');
   const minimo_msi = val('e_minimo_msi') ? validarMonto(val('e_minimo_msi')) : null;
