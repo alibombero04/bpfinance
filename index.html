@@ -829,7 +829,7 @@ function vGastos() {
   if (!NSG.user) return `<div class="card"><h3>🛒 Gastos de NoteScanner</h3>
       <p style="font-size:14px;color:var(--text2);margin:6px 0 12px">Conecta tu cuenta de NoteScanner <b>una sola vez</b> en este teléfono. Después los gastos aparecen aquí solos y al día, sin hacer nada en NoteScanner.</p>
       <div class="f"><label>Correo</label><input value="${esc(FB.auth.currentUser && FB.auth.currentUser.email || '')}" disabled></div>
-      <div class="f" style="margin-top:10px"><label>Contraseña de NoteScanner</label><input type="password" id="nsPass" autocomplete="current-password" onkeydown="if(event.key==='Enter')nsConectar()"></div>
+      <div class="f" style="margin-top:10px"><label>Contraseña de NoteScanner</label><div class="inpw"><input type="password" id="nsPass" autocomplete="current-password" style="padding-right:46px" onkeydown="if(event.key==='Enter')nsConectar()"><button class="eye" type="button" onclick="const i=$('nsPass');i.type=i.type==='password'?'text':'password'" aria-label="Mostrar contraseña"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
       <div id="nsErr" style="color:var(--red);font-size:13px;margin:8px 0;min-height:16px"></div>
       <button class="btn" id="nsBtn" onclick="nsConectar()">Conectar NoteScanner</button>
       <button class="btn-lite" style="margin-top:10px" onclick="nsOlvide()">¿Olvidaste tu contraseña de NoteScanner?</button></div>`;
