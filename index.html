@@ -176,6 +176,10 @@ button, input, select { font-family:var(--font); }
 <input type="file" id="galIn" accept="image/*" class="hidden" onchange="onFoto(this)">
 <input type="file" id="pdfIn" accept="application/pdf,.pdf" class="hidden" onchange="onFoto(this)">
 
+<!-- PIN / contraseña para eliminar -->
+<div class="sheet" id="pinSheet" style="z-index:30;align-items:center;justify-content:center">
+  <div class="box" id="pinBox" style="border-radius:22px;max-width:360px;margin:16px"></div>
+</div>
 <div class="viewer" id="viewer" onclick="this.classList.remove('on')"><img id="viewerImg" alt=""></div>
 <div class="toast" id="toast"></div>
 
@@ -264,7 +268,7 @@ const FRECUENCIAS = { mensual: { label: 'Mensual', meses: 1 }, bimestral: { labe
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 let userName = '', vista = 'inicio';
-let PAGOS = {}, RECIBOS = {}, CATALOGO = {}, EDOCTA = {}; // RECIBOS: avisos de cobro, NO son pagos
+let PAGOS = {}, RECIBOS = {}, CATALOGO = {}, EDOCTA = {}, PINES = {}; // PINES: {uid: {salt, hash}} PIN para eliminar // RECIBOS: avisos de cobro, NO son pagos
 const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '', categoria: '' };
 let filtro = { ...FILTRO_INICIAL };
 let editEdo = null; // id del estado de cuenta en edición o 'nuevo'
@@ -273,6 +277,15 @@ let foto = null, fotoUrl = null, fotoMime = 'image/jpeg'; // fotoMime: image/jpe
 
 // ── utilidades ──
 const $ = id => document.getElementById(id);
+const APP_VER = '2026-11-27c';
+async function revisarVersion() {
+  try {
+    const t = await (await fetch('/?v=' + Date.now(), { cache: 'no-store' })).text();
+    const m = /const APP_VER = '([^']+)'/.exec(t);
+    if (m && m[1] !== APP_VER && !$('sheet').classList.contains('on') && !$('pinSheet').classList.contains('on')) location.reload();
+  } catch(e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revisarVersion(); });
 function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2800); }
 const fmt = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -377,6 +390,7 @@ function escuchar() {
     const v = snap.val() || {};
     CATALOGO = v._catalogo || {};
     EDOCTA = v._edocta || {};
+    PINES = v._pin || {};
     PAGOS = {}; RECIBOS = {};
     // Un recibo (aviso de cobro) es solo referencia del servicio: no cuenta como pagado ni se suma
     Object.entries(v).forEach(([k, p]) => { if (k[0] === '_' || !p || typeof p.cantidad !== 'number') return;
@@ -981,13 +995,61 @@ async function cambiarMetodo(key, m) {
   try { await FB.update(FB.ref(FB.db), { ['pagos/' + key + '/metodo']: m }); toast('✅ Método actualizado'); }
   catch(e) { toast('❌ ' + e.message); }
 }
+// ── PIN de 4 dígitos para eliminar (no es la contraseña de la app) ──
+// Se guarda solo el hash (PBKDF2) en pagos/_pin/{uid}. Crearlo o cambiarlo pide la contraseña de la app.
+let pinFallos = 0;
+function pedirClave(titulo, esPin, olvide) {
+  return new Promise(res => {
+    const fin = v => { $('pinSheet').classList.remove('on'); res(v); };
+    $('pinBox').innerHTML = `<div class="hd"><b style="font-size:16px">${titulo}</b><button id="pinX">✕</button></div>
+      <div class="f"><input id="pinIn" type="password" ${esPin ? 'inputmode="numeric" maxlength="4" autocomplete="off" style="font-size:28px;letter-spacing:14px;text-align:center"' : 'autocomplete="current-password" placeholder="Contraseña de la app"'}></div>
+      <button class="btn" id="pinOk">Aceptar</button>${olvide ? '<button class="btn-lite" id="pinOlv">¿Olvidaste tu PIN?</button>' : ''}`;
+    $('pinX').onclick = () => fin(null);
+    $('pinOk').onclick = () => fin($('pinIn').value);
+    $('pinIn').onkeydown = e => { if (e.key === 'Enter') fin($('pinIn').value); };
+    if (esPin) $('pinIn').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); if (e.target.value.length === 4) fin(e.target.value); };
+    if (olvide) $('pinOlv').onclick = () => fin('__olvide');
+    $('pinSheet').onclick = e => { if (e.target === $('pinSheet')) fin(null); };
+    $('pinSheet').classList.add('on');
+    setTimeout(() => $('pinIn').focus(), 50);
+  });
+}
+async function hashPin(pin, salt) {
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveBits']);
+  const b = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(salt), iterations: 150000 }, k, 256);
+  return btoa(String.fromCharCode(...new Uint8Array(b)));
+}
+async function autorizarBorrado(que) {
+  const u = FB.auth.currentUser; if (!u) return false;
+  const mio = PINES[u.uid];
+  if (mio && mio.hash && mio.salt && pinFallos < 5) {
+    const pin = await pedirClave('🔒 PIN para eliminar ' + que, true, true);
+    if (pin === null) return false;
+    if (pin !== '__olvide') {
+      if (await hashPin(pin, mio.salt) === mio.hash) { pinFallos = 0; return true; }
+      pinFallos++; toast(pinFallos >= 5 ? '🔒 Demasiados intentos: la próxima vez se pide la contraseña' : '❌ PIN incorrecto'); return false;
+    }
+  }
+  // Crear o restablecer el PIN: primero la contraseña de la app
+  const pass = await pedirClave(mio ? '🔑 Para cambiar tu PIN escribe tu contraseña de la app' : '🔑 Vas a crear tu PIN para eliminar. Primero tu contraseña de la app', false, false);
+  if (!pass) return false;
+  try { await FB.reauthenticateWithCredential(u, FB.EmailAuthProvider.credential(u.email, pass)); }
+  catch(e) { toast(/invalid|wrong/.test(e.code || '') ? '❌ Contraseña incorrecta' : '❌ ' + (e.code || e.message)); return false; }
+  const p1 = await pedirClave('🔢 Escribe tu nuevo PIN de 4 dígitos', true, false);
+  if (!p1) return false;
+  if (!/^\d{4}$/.test(p1)) { toast('⚠️ El PIN son 4 números'); return false; }
+  const p2 = await pedirClave('🔢 Repite el PIN', true, false);
+  if (p2 !== p1) { toast('❌ Los PIN no coinciden'); return false; }
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+  try { await FB.update(FB.ref(FB.db), { ['pagos/_pin/' + u.uid]: { salt, hash: await hashPin(p1, salt), ts: Date.now() } }); }
+  catch(e) { toast('❌ No se pudo guardar el PIN: ' + e.message); return false; }
+  pinFallos = 0; toast('✅ PIN guardado'); return true;
+}
 async function borrarPago(key) {
   const p = PAGOS[key] || RECIBOS[key]; if (!p) return;
-  const pass = window.prompt(`Para eliminar ${p.recibo ? 'el recibo' : 'el pago'} de ${fmt(p.cantidad)} escribe tu contraseña:`);
-  if (!pass) return;
+  if (!await autorizarBorrado(`${p.recibo ? 'el recibo' : 'el pago'} de ${fmt(p.cantidad)}`)) return;
   try {
-    const u = FB.auth.currentUser;
-    await FB.reauthenticateWithCredential(u, FB.EmailAuthProvider.credential(u.email, pass));
     await FB.remove(FB.ref(FB.db, 'pagos/' + key));
     toast(p.recibo ? '🗑 Recibo eliminado' : '🗑 Pago eliminado');
   } catch(e) { toast(/invalid|wrong/.test(e.code || '') ? '❌ Contraseña incorrecta' : '❌ ' + (e.code || e.message)); }
@@ -1102,17 +1164,20 @@ function abrirRegistro(datos) {
     <div class="hd"><b>➕ Registrar</b><button onclick="cerrarRegistro()">✕</button></div>
     <div class="g3"><button class="btn" onclick="$('camIn').click()">📷 Cámara</button><button class="btn" onclick="$('galIn').click()">🖼 Galería</button><button class="btn" onclick="$('pdfIn').click()">📄 PDF</button></div>
     <div id="rFoto"></div><div id="rMsg"></div>
-    ${formPago(datos || {})}`;
+    <button class="btn-lite" id="btnManual" onclick="mostrarForm()">✍️ Llenar a mano (sin foto)</button>
+    ${formPago(datos || {}, false)}`;
   $('sheet').classList.add('on');
   actualizarCampos();
 }
 const esRecibo = () => !!($('p_doc') && $('p_doc').value === 'recibo');
+// Los campos aparecen después de leer la foto con IA, o si se elige llenar a mano
+function mostrarForm() { if ($('rForm')) $('rForm').style.display = 'flex'; if ($('btnManual')) $('btnManual').style.display = 'none'; }
 function cerrarRegistro() { $('sheet').classList.remove('on'); }
-function formPago(d) {
+function formPago(d, visible = true) {
   const opt = (val, txt, sel) => `<option value="${esc(val)}" ${sel ? 'selected' : ''}>${esc(txt)}</option>`;
   const v = x => esc(x == null ? '' : x);
   const t = d.tipo_pago ? tipoPago(d) : 'tarjeta';
-  return `<div style="display:flex;flex-direction:column;gap:10px" id="rForm">
+  return `<div style="display:${visible ? 'flex' : 'none'};flex-direction:column;gap:10px" id="rForm">
     <div class="f" id="w_doc"><label>¿Qué es? *</label><select id="p_doc" onchange="actualizarCampos()">${opt('pago', '💸 Comprobante de pago', d.documento !== 'recibo')}${opt('recibo', '📄 Recibo / aviso de cobro (no es pago)', d.documento === 'recibo')}</select></div>
     <div class="f"><label>Tipo de pago *</label><select id="p_tipo" onchange="actualizarCampos()">${Object.entries(TIPOS).map(([k, x]) => opt(k, x.icon + ' ' + x.label, t === k)).join('')}</select></div>
     <div id="w_serv">
@@ -1274,11 +1339,13 @@ Responde con este JSON exacto (OMITE campos vacíos, JSON compacto en una línea
     $('rForm').outerHTML = formPago(d);
     $('rFoto').innerHTML = fotoHtml;
     actualizarCampos();
+    mostrarForm();
     autocompletar(false);
     $('rMsg').innerHTML = `<div class="banner">✅ ${esRecibo() ? '📄 Recibo (no es pago) de ' : ''}${TIPOS[tipoPago(d)].icon} ${TIPOS[tipoPago(d)].label} detectado — revisa y guarda</div>`;
   } catch(e) {
     console.warn('[IA]', e);
     $('rMsg').innerHTML = `<div class="banner err">⚠️ No se pudo leer con IA (${esc(e.message)}). Llena los datos a mano.</div>`;
+    mostrarForm();
   }
 }
 function b64toBlob(b64, mime) { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return new Blob([a], { type: mime }); }
