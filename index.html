@@ -174,6 +174,7 @@ button, input, select { font-family:var(--font); }
 </div>
 <input type="file" id="camIn" accept="image/*" capture="environment" class="hidden" onchange="onFoto(this)">
 <input type="file" id="galIn" accept="image/*" class="hidden" onchange="onFoto(this)">
+<input type="file" id="adjIn" accept="image/*,application/pdf,.pdf" class="hidden" onchange="onAdjunto(this)">
 <input type="file" id="pdfIn" accept="application/pdf,.pdf" class="hidden" onchange="onFoto(this)">
 
 <!-- PIN / contraseña para eliminar -->
@@ -277,7 +278,7 @@ let foto = null, fotoUrl = null, fotoMime = 'image/jpeg'; // fotoMime: image/jpe
 
 // ── utilidades ──
 const $ = id => document.getElementById(id);
-const APP_VER = '2026-11-27e';
+const APP_VER = '2026-11-28a';
 async function revisarVersion() {
   try {
     const t = await (await fetch('/?v=' + Date.now(), { cache: 'no-store' })).text();
@@ -738,7 +739,8 @@ function vRecibos() {
         <span class="tag">📅 Recibo del ${esc(r.fecha)}</span>
         ${r.who ? `<span class="tag">👤 ${esc(r.who)}</span>` : ''}
       </div>
-      ${r.imgUrl ? (esPdf(r.imgUrl) ? `<a class="btn-lite" style="margin-top:8px" href="${esc(r.imgUrl)}" target="_blank" rel="noopener">📄 Ver recibo (PDF)</a>` : comprobanteHtml(r.imgUrl, 'Ver recibo completo')) : ''}
+      ${r.imgUrl ? (esPdf(r.imgUrl) ? `<a class="btn-lite" style="margin-top:8px" href="${esc(r.imgUrl)}" target="_blank" rel="noopener">📄 Ver recibo (PDF)</a>` : comprobanteHtml(r.imgUrl, 'Ver recibo completo'))
+        : `<div class="banner err" style="margin-top:8px">⚠️ Este recibo se guardó sin el archivo.</div><button class="btn-lite" onclick="adjuntar('${esc(r._key)}')">📎 Adjuntar el recibo (foto o PDF)</button>`}
       <div class="acts"><button class="del" onclick="borrarPago('${esc(r._key)}')">🗑 Eliminar recibo</button></div>
     </div>`;
   }).join('');
@@ -1041,7 +1043,7 @@ function listaHtml(arr, icono, vacio) {
         ${p.concepto ? `<span class="tag">${esc(p.concepto)}</span>` : ''}
         ${p.who ? `<span class="tag">👤 ${esc(p.who)}</span>` : ''}
       </div>
-      ${p.imgUrl ? comprobanteHtml(p.imgUrl, 'Ver comprobante completo') : ''}
+      ${p.imgUrl ? comprobanteHtml(p.imgUrl, 'Ver comprobante completo') : `<button class="btn-lite" style="margin-top:8px" onclick="adjuntar('${esc(p._key)}')">📎 Adjuntar comprobante (foto o PDF)</button>`}
       <div class="acts">
         <button onclick="cambiarMetodo('${esc(p._key)}','${mt === 'cajero' ? 'transferencia' : 'cajero'}')">${mt === 'cajero' ? '🔁 Marcar transferencia' : '🏧 Marcar cajero'}</button>
         <button class="del" onclick="borrarPago('${esc(p._key)}')">🗑</button>
@@ -1430,6 +1432,32 @@ async function subirFoto() {
   fotoUrl = await FB.getDownloadURL(r);
   return fotoUrl;
 }
+// Adjunta foto o PDF a un recibo o pago ya guardado que se quedó sin archivo
+let adjKey = null;
+function adjuntar(key) { adjKey = key; $('adjIn').click(); }
+function onAdjunto(input) {
+  const file = input.files[0]; input.value = ''; const key = adjKey; adjKey = null;
+  if (!file || !key || !(PAGOS[key] || RECIBOS[key])) return;
+  const pdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  if (pdf && file.size > MAX_PDF) return toast('⚠️ El PDF pesa ' + (file.size / 1048576).toFixed(1) + ' MB; el máximo es 3.5 MB');
+  const rd = new FileReader();
+  rd.onload = async e => {
+    try {
+      toast(pdf ? '⏫ Subiendo PDF…' : '⏫ Subiendo imagen…');
+      if (pdf) { foto = String(e.target.result).split(',')[1]; fotoMime = 'application/pdf'; }
+      else { foto = (await compressImage(e.target.result, 1024 * 1024, 0.8)).split(',')[1]; fotoMime = 'image/jpeg'; }
+      fotoUrl = null;
+      const url = await subirFoto();
+      await FB.update(FB.ref(FB.db), { ['pagos/' + key + '/imgUrl']: url });
+      toast('✅ Archivo adjuntado');
+    } catch(err) { alert(errorSubida(err)); }
+    finally { foto = null; fotoUrl = null; }
+  };
+  rd.readAsDataURL(file);
+}
+const errorSubida = e => /unauthorized|permission/i.test((e && (e.code || e.message)) || '')
+  ? '❌ Firebase Storage no permitió guardar el archivo (reglas de Storage sin publicar). Avísale a Claude.'
+  : '❌ No se pudo subir el archivo: ' + ((e && (e.code || e.message)) || e);
 async function guardarPago() {
   const val = x => ($(x) ? $(x).value : '').trim();
   const tipo = val('p_tipo');
@@ -1464,7 +1492,9 @@ async function guardarPago() {
   };
   if (recibo) { pago.recibo = true; pago.metodo = ''; pago.banco = pago.banco_origen = pago.cuenta_origen = ''; }
   try {
-    if (foto) { btn.textContent = fotoMime === 'application/pdf' ? 'Subiendo PDF…' : 'Subiendo imagen…'; try { pago.imgUrl = await subirFoto(); } catch(e) { toast('⚠️ ' + e.message + ' — se guarda sin imagen'); } }
+    if (foto) { btn.textContent = fotoMime === 'application/pdf' ? 'Subiendo PDF…' : 'Subiendo imagen…';
+      try { pago.imgUrl = await subirFoto(); }
+      catch(e) { if (!confirm(errorSubida(e) + '\n\n¿Guardar ' + (recibo ? 'el recibo' : 'el pago') + ' sin el archivo? Lo puedes adjuntar después.')) return; } }
     await FB.push(FB.ref(FB.db, 'pagos'), pago);
     toast(recibo ? '✅ Recibo guardado (no cuenta como pago)' : '✅ Pago guardado');
     cerrarRegistro();
