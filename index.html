@@ -269,7 +269,7 @@ const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov'
 
 let userName = '', vista = 'inicio';
 let PAGOS = {}, RECIBOS = {}, CATALOGO = {}, EDOCTA = {}, PINES = {}; // PINES: {uid: {salt, hash}} PIN para eliminar // RECIBOS: avisos de cobro, NO son pagos
-const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '', categoria: '' };
+const FILTRO_INICIAL = { doc: 'pagos', prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '', categoria: '' };
 let filtro = { ...FILTRO_INICIAL };
 let editEdo = null; // id del estado de cuenta en edición o 'nuevo'
 let editCat = null; // id del servicio/colegiatura en edicion, 'nuevo-servicio', 'nuevo-colegiatura'
@@ -277,7 +277,7 @@ let foto = null, fotoUrl = null, fotoMime = 'image/jpeg'; // fotoMime: image/jpe
 
 // ── utilidades ──
 const $ = id => document.getElementById(id);
-const APP_VER = '2026-11-27d';
+const APP_VER = '2026-11-27e';
 async function revisarVersion() {
   try {
     const t = await (await fetch('/?v=' + Date.now(), { cache: 'no-store' })).text();
@@ -422,6 +422,19 @@ function pintar() {
 const chip = (on, onclick, txt) => `<button class="chip${on ? ' on' : ''}" onclick="${onclick}">${txt}</button>`;
 const sumaMXN = arr => arr.filter(p => (p.moneda || 'MXN') === 'MXN').reduce((s, p) => s + (p.cantidad || 0), 0);
 
+// Recibos de un número de servicio, cada uno con el pago que lo cubre (o null):
+// mismo periodo, o un pago con fecha igual o posterior al recibo y antes del recibo siguiente
+function recibosDe(num) {
+  if (!num) return [];
+  const suyos = listaPagos().filter(p => soloDigitos(p.numero_servicio) === num).map(p => ({ p, f: fechaDeDMY(p.fecha) })).filter(x => x.f).sort((a, b) => b.f - a.f);
+  const rs = listaRecibos().filter(r => soloDigitos(r.numero_servicio) === num);
+  return rs.map((r, i) => {
+    const fr = fechaDeDMY(r.fecha), per = normPeriodo(r.periodo), sig = i > 0 ? fechaDeDMY(rs[i - 1].fecha) : null;
+    const pago = suyos.map(x => x.p).find(p => per && normPeriodo(p.periodo) === per)
+      || (fr ? (suyos.filter(x => x.f >= fr && (!sig || x.f < sig)).pop() || {}).p : null) || null;
+    return { r, pago };
+  });
+}
 // ── estado de un servicio / colegiatura del catalogo ──
 function estadoCat(s) {
   const num = soloDigitos(s.numero);
@@ -446,13 +459,7 @@ function estadoCat(s) {
   }
   // Recibo ↔ comprobante: mismo número de servicio y mismo periodo, o un pago con fecha igual o posterior al recibo
   // (el pago por fecha debe caer antes del recibo siguiente, para que un pago no cubra dos recibos)
-  const rs = num ? listaRecibos().filter(r => soloDigitos(r.numero_servicio) === num) : [];
-  const recibos = rs.map((r, i) => {
-    const fr = fechaDeDMY(r.fecha), per = normPeriodo(r.periodo), sig = i > 0 ? fechaDeDMY(rs[i - 1].fecha) : null;
-    const pago = suyos.map(x => x.p).find(p => per && normPeriodo(p.periodo) === per)
-      || (fr ? (suyos.filter(x => x.f >= fr && (!sig || x.f < sig)).pop() || {}).p : null) || null;
-    return { r, pago };
-  });
+  const recibos = recibosDe(num);
   return { ultimo: ultimo && ultimo.p, recibos, comprobantes: suyos.map(x => x.p).filter(p => p.imgUrl), pagado, vence, dias, txt, cls };
 }
 const colorEstado = c => c === 'g' ? 'var(--green)' : c === 'r' ? 'var(--red)' : c === 'o' ? 'var(--orange)' : 'var(--text2)';
@@ -678,10 +685,15 @@ function montoResumen(arr) {
   return partes.join(' + ');
 }
 const filaResumen = (txt, arr) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--border)"><div class="n" style="font-weight:600">${txt} <span style="font-weight:500;color:var(--text2)">(${arr.length})</span></div><div class="m">${montoResumen(arr)}</div></div>`;
+// Historial: pagos, recibos o estados de cuenta
 function vHistorial() {
+  const pest = `<div class="chips">${chip(filtro.doc === 'pagos', "setF('doc','pagos')", '💸 Pagos')}${chip(filtro.doc === 'recibos', "setF('doc','recibos')", '📄 Recibos (' + Object.keys(RECIBOS).length + ')')}${chip(filtro.doc === 'edocta', "setF('doc','edocta')", '💳 Estados de cuenta (' + Object.keys(EDOCTA).length + ')')}</div>`
+    + `<div class="chips">${Object.entries(PERIODOS).map(([k, t]) => chip(filtro.periodo === k, `setF('periodo','${k}')`, t)).join('')}</div>`;
+  if (filtro.doc === 'recibos') return pest + vRecibos();
+  if (filtro.doc === 'edocta') return pest + vEstadosCuenta();
   const arr = listaPagos().filter(p => enPeriodo(p, filtro.periodo));
   const otras = arr.filter(p => (p.moneda || 'MXN') !== 'MXN').length;
-  let h = `<div class="chips">${Object.entries(PERIODOS).map(([k, t]) => chip(filtro.periodo === k, `setF('periodo','${k}')`, t)).join('')}</div>`;
+  let h = pest;
   h += `<div class="stats"><div><b>${arr.length}</b><small>Pagos</small></div><div><b>${fmt(sumaMXN(arr))}</b><small>Total MXN</small></div><div><b>${fmt(arr.length ? sumaMXN(arr) / Math.max(1, arr.filter(p => (p.moneda || 'MXN') === 'MXN').length) : 0)}</b><small>Promedio por pago</small></div></div>`;
   if (!arr.length) return h + `<div class="empty"><span>🗂</span>Sin pagos en este periodo.</div>`;
   if (otras) h += `<div class="banner">ℹ️ ${otras} pago${otras === 1 ? '' : 's'} en otra moneda no se suma${otras === 1 ? '' : 'n'} al total en pesos.</div>`;
@@ -706,6 +718,53 @@ function vHistorial() {
   if (personas.length > 1) h += `<div class="card"><h3>👤 Registrado por</h3>` + personas
     .map(w => filaResumen(esc(w), arr.filter(p => (p.who || 'Sin nombre') === w))).join('') + `</div>`;
   return h;
+}
+function vRecibos() {
+  const arr = listaRecibos().filter(r => enPeriodo(r, filtro.periodo));
+  if (!arr.length) return `<div class="empty"><span>📄</span>Sin recibos en este periodo.<br>Súbelos con ＋ Registrar: la IA reconoce si es recibo o comprobante.</div>`;
+  const ligas = {}; [...new Set(arr.map(r => soloDigitos(r.numero_servicio)))].forEach(n => recibosDe(n).forEach(x => { ligas[x.r._key] = x.pago; }));
+  const sinPago = arr.filter(r => !ligas[r._key] && r.cantidad > 0);
+  let h = `<div class="stats"><div><b>${arr.length}</b><small>Recibos</small></div><div><b>${sinPago.length}</b><small>Sin comprobante</small></div><div><b>${fmt(sumaMXN(sinPago))}</b><small>Por pagar</small></div></div>`;
+  h += `<div class="banner">ℹ️ Los recibos son solo referencia: no cuentan como pagos ni se suman a los totales.</div>`;
+  return h + arr.map(r => {
+    const pago = ligas[r._key], est = pago ? `✅ Pagado el ${esc(pago.fecha)} (${fmt(pago.cantidad)})` : r.cantidad === 0 ? '⚪ En $0, nada que pagar' : '⏳ Sin comprobante de pago';
+    return `<div class="card">
+      <div class="row"><div class="n">${tipoPago(r) === 'colegiatura' ? '🎓 ' + esc(r.alumno || '') + ' · ' : '💡 '}${esc(r.servicio || 'Servicio')}${r.departamento ? ' <span style="font-weight:500;color:var(--text2)">· ' + esc(r.departamento) + '</span>' : ''}</div><div class="m">${fmt(r.cantidad)}</div></div>
+      <div class="estado" style="color:${pago ? 'var(--green)' : r.cantidad === 0 ? 'var(--text2)' : 'var(--orange)'}">${est}</div>
+      <div class="tags">
+        ${r.periodo ? `<span class="tag">🗓 ${esc(r.periodo)}</span>` : ''}
+        ${r.vence ? `<span class="tag o">Vence ${esc(r.vence)}</span>` : ''}
+        ${r.numero_servicio ? `<span class="tag g">No. ${esc(r.numero_servicio)}</span>` : ''}
+        <span class="tag">📅 Recibo del ${esc(r.fecha)}</span>
+        ${r.who ? `<span class="tag">👤 ${esc(r.who)}</span>` : ''}
+      </div>
+      ${r.imgUrl ? (esPdf(r.imgUrl) ? `<a class="btn-lite" style="margin-top:8px" href="${esc(r.imgUrl)}" target="_blank" rel="noopener">📄 Ver recibo (PDF)</a>` : comprobanteHtml(r.imgUrl, 'Ver recibo completo')) : ''}
+      <div class="acts"><button class="del" onclick="borrarPago('${esc(r._key)}')">🗑 Eliminar recibo</button></div>
+    </div>`;
+  }).join('');
+}
+function vEstadosCuenta() {
+  const todos = Object.entries(EDOCTA).map(([id, e]) => ({ _id: id, ...e }));
+  const arr = todos.filter(e => enPeriodo({ fecha: e.fecha_corte }, filtro.periodo))
+    .sort((a, b) => (fechaDeDMY(b.fecha_corte) || 0) - (fechaDeDMY(a.fecha_corte) || 0));
+  if (!arr.length) return `<div class="empty"><span>💳</span>Sin estados de cuenta con corte en este periodo.<br>Se capturan en 💳 Tarjetas → Por pagar.</div>`;
+  return arr.map(e => {
+    // abonos entre este corte y el corte siguiente de la misma tarjeta
+    const sig = todos.filter(x => ult4(x.tarjeta) === ult4(e.tarjeta) && fechaDeDMY(x.fecha_corte) > fechaDeDMY(e.fecha_corte))
+      .sort((a, b) => fechaDeDMY(a.fecha_corte) - fechaDeDMY(b.fecha_corte))[0] || null;
+    const abonado = sumaMXN(abonosDe(e, sig)), falta = Math.max(0, Math.round(((e.monto || 0) - abonado) * 100) / 100);
+    return `<div class="card">
+      <div class="row"><div class="n">💳 ${nombreTarjeta(e)}</div><div class="m">${fmt(e.monto || 0)}</div></div>
+      <div class="estado" style="color:${falta > 0 ? 'var(--orange)' : 'var(--green)'}">${!(e.monto > 0) ? '✅ Sin pago (no se usó)' : falta > 0 ? 'Falta ' + fmt(falta) + ' · abonado ' + fmt(abonado) : '✅ Liquidado · abonado ' + fmt(abonado)}</div>
+      <div class="tags">
+        <span class="tag">✂️ Corte ${esc(e.fecha_corte)}</span>
+        <span class="tag o">Límite ${esc(e.fecha_limite || '—')}</span>
+        ${e.minimo > 0 ? `<span class="tag">Mínimo ${fmt(e.minimo)}</span>` : ''}
+        ${e.minimo_msi > 0 ? `<span class="tag">Mínimo + meses ${fmt(e.minimo_msi)}</span>` : ''}
+        ${sig ? '' : '<span class="tag g">Vigente</span>'}
+      </div>
+    </div>`;
+  }).join('');
 }
 // ══ VISTA: GASTOS DE NOTESCANNER (solo lectura, en vivo) ══
 // Lee `records` de NoteScanner con la cuenta de NoteScanner de quien entra. Las
