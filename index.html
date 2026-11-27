@@ -165,7 +165,7 @@ button, input, select { font-family:var(--font); }
     <button data-v="historial" onclick="ir('historial')"><span>🗂</span>Historial</button>
     <button data-v="gastos" onclick="ir('gastos')"><span>🛒</span>Gastos</button>
   </div>
-  <button class="fab" onclick="abrirRegistro()" title="Registrar pago">＋</button>
+  <button class="fab" onclick="abrirRegistro()" title="Registrar recibo o pago">＋</button>
 </div>
 
 <!-- REGISTRAR PAGO -->
@@ -264,7 +264,7 @@ const FRECUENCIAS = { mensual: { label: 'Mensual', meses: 1 }, bimestral: { labe
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 let userName = '', vista = 'inicio';
-let PAGOS = {}, CATALOGO = {}, EDOCTA = {};
+let PAGOS = {}, RECIBOS = {}, CATALOGO = {}, EDOCTA = {}; // RECIBOS: avisos de cobro, NO son pagos
 const FILTRO_INICIAL = { prop: 'todas', cat: 'todas', metodo: 'todos', periodo: 'mes', persona: '', pais: '', ciudad: '', categoria: '' };
 let filtro = { ...FILTRO_INICIAL };
 let editEdo = null; // id del estado de cuenta en edición o 'nuevo'
@@ -293,6 +293,8 @@ function validarMonto(s) {
   const n = Math.round(parseFloat(r) * 100) / 100;
   return n > 0 && n <= 10000000 ? n : null;
 }
+// Igual que validarMonto pero acepta 0 (recibo en $0, tarjeta sin uso). Vacío = null.
+const montoOCero = txt => /^0+([.,]0*)?$/.test(String(txt || '').trim()) ? 0 : validarMonto(txt);
 function normHora(h) {
   const m = /^(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap])?\.?\s*m?\.?$/i.exec(String(h || '').trim());
   if (!m) return '';
@@ -318,6 +320,10 @@ function metodoPago(p) {
   return (p && (p.cuenta_origen || p.banco_origen)) ? 'transferencia' : '';
 }
 function normProp(v) { const s = String(v || '').toLowerCase(); return PROPIEDADES.find(p => s.includes(p.toLowerCase())) || ''; }
+// Etiqueta que abre la imagen en el visor o el PDF en otra pestaña
+const ligaDoc = (url, txt, cls) => !url ? `<span class="tag ${cls}">${txt}</span>`
+  : esPdf(url) ? `<a class="tag ${cls}" href="${esc(url)}" target="_blank" rel="noopener" style="text-decoration:none">📄 ${txt}</a>`
+  : `<span class="tag ${cls}" style="cursor:pointer" onclick="verImg('${esc(url)}')">🖼 ${txt}</span>`;
 function verImg(url) { $('viewerImg').src = url; $('viewer').classList.add('on'); }
 // Comprobante guardado: PDF (liga que abre el archivo) o imagen (miniatura que abre el visor)
 const esPdf = url => /\.pdf(\?|$)/i.test(decodeURIComponent(String(url || '')));
@@ -371,15 +377,19 @@ function escuchar() {
     const v = snap.val() || {};
     CATALOGO = v._catalogo || {};
     EDOCTA = v._edocta || {};
-    PAGOS = {};
-    Object.entries(v).forEach(([k, p]) => { if (k[0] !== '_' && p && p.cantidad > 0) PAGOS[k] = p; });
+    PAGOS = {}; RECIBOS = {};
+    // Un recibo (aviso de cobro) es solo referencia del servicio: no cuenta como pagado ni se suma
+    Object.entries(v).forEach(([k, p]) => { if (k[0] === '_' || !p || typeof p.cantidad !== 'number') return;
+      if (p.recibo === true) { if (p.cantidad >= 0) RECIBOS[k] = p; } else if (p.cantidad > 0) PAGOS[k] = p; });
     pintar();
   }, err => {
     $('main').innerHTML = `<div class="banner err">❌ No se pudieron leer los pagos: ${esc(err.message)}</div>`;
   });
 }
-const listaPagos = () => Object.entries(PAGOS).map(([k, p]) => ({ _key: k, ...p }))
-  .sort((a, b) => (fechaDeDMY(b.fecha) || 0) - (fechaDeDMY(a.fecha) || 0) || (b.ts || 0) - (a.ts || 0));
+const ordenFecha = (a, b) => (fechaDeDMY(b.fecha) || 0) - (fechaDeDMY(a.fecha) || 0) || (b.ts || 0) - (a.ts || 0);
+const listaPagos = () => Object.entries(PAGOS).map(([k, p]) => ({ _key: k, ...p })).sort(ordenFecha);
+const listaRecibos = () => Object.entries(RECIBOS).map(([k, p]) => ({ _key: k, ...p })).sort(ordenFecha);
+const normPeriodo = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 // ══ NAVEGACION ══
 function ir(v) { vista = v; filtro = { ...FILTRO_INICIAL }; editCat = null; editEdo = null; pintar(); $('main').scrollTop = 0; }
@@ -420,7 +430,16 @@ function estadoCat(s) {
     else if (dias <= 5) { txt = dias === 0 ? '🟡 Vence hoy' : `🟡 Vence en ${dias} día${dias === 1 ? '' : 's'}`; cls = 'o'; }
     else { txt = `⚪ Vence el ${fmtDMY(vence)}`; cls = ''; }
   }
-  return { ultimo: ultimo && ultimo.p, pagado, vence, dias, txt, cls };
+  // Recibo ↔ comprobante: mismo número de servicio y mismo periodo, o un pago con fecha igual o posterior al recibo
+  // (el pago por fecha debe caer antes del recibo siguiente, para que un pago no cubra dos recibos)
+  const rs = num ? listaRecibos().filter(r => soloDigitos(r.numero_servicio) === num) : [];
+  const recibos = rs.map((r, i) => {
+    const fr = fechaDeDMY(r.fecha), per = normPeriodo(r.periodo), sig = i > 0 ? fechaDeDMY(rs[i - 1].fecha) : null;
+    const pago = suyos.map(x => x.p).find(p => per && normPeriodo(p.periodo) === per)
+      || (fr ? (suyos.filter(x => x.f >= fr && (!sig || x.f < sig)).pop() || {}).p : null) || null;
+    return { r, pago };
+  });
+  return { ultimo: ultimo && ultimo.p, recibos, comprobantes: suyos.map(x => x.p).filter(p => p.imgUrl), pagado, vence, dias, txt, cls };
 }
 const colorEstado = c => c === 'g' ? 'var(--green)' : c === 'r' ? 'var(--red)' : c === 'o' ? 'var(--orange)' : 'var(--text2)';
 
@@ -450,7 +469,7 @@ function vInicio() {
         <div class="row"><div class="n">${s.categoria === 'colegiatura' ? '🎓 ' + esc(s.alumno || '') + ' · ' + esc(s.servicio || '') : '💡 ' + esc(s.servicio || '') + ' · ' + esc(s.propiedad || '')}</div>
         ${s.monto ? `<div class="m">≈ ${fmt(s.monto)}</div>` : ''}</div>
         <div class="row"><div class="estado" style="color:${colorEstado(e.cls)};flex:1">${e.txt}</div>
-        <button class="chip" onclick="registrarDeCatalogo('${esc(id)}')">💾 Registrar pago</button></div>
+        <button class="chip" onclick="registrarDeCatalogo('${esc(id)}')">💾 Registrar</button></div>
       </div>`).join('')
     : `<div class="empty" style="padding:10px">${items.length ? '🎉 Todo pagado por ahora' : 'Da de alta tus servicios y colegiaturas para ver aquí sus vencimientos.'}</div>`;
   h += `</div>`;
@@ -563,7 +582,6 @@ async function guardarEdo(id) {
   if (fechaDeDMY(limite) < fechaDeDMY(corte)) return toast('⚠️ La fecha límite es antes del corte');
   // Puede ser 0 cuando la tarjeta no se usó en el periodo
   // Los tres montos aceptan 0 (tarjeta sin uso o con saldo a favor). Vacío = no se capturó.
-  const montoOCero = txt => /^0+([.,]0*)?$/.test(txt) ? 0 : validarMonto(txt);
   const montoTxt = val('e_monto');
   const monto = montoOCero(montoTxt);
   if (monto === null) return toast('⚠️ Escribe el pago para no generar intereses (0 si no se usó)');
@@ -964,14 +982,14 @@ async function cambiarMetodo(key, m) {
   catch(e) { toast('❌ ' + e.message); }
 }
 async function borrarPago(key) {
-  const p = PAGOS[key]; if (!p) return;
-  const pass = window.prompt(`Para eliminar el pago de ${fmt(p.cantidad)} escribe tu contraseña:`);
+  const p = PAGOS[key] || RECIBOS[key]; if (!p) return;
+  const pass = window.prompt(`Para eliminar ${p.recibo ? 'el recibo' : 'el pago'} de ${fmt(p.cantidad)} escribe tu contraseña:`);
   if (!pass) return;
   try {
     const u = FB.auth.currentUser;
     await FB.reauthenticateWithCredential(u, FB.EmailAuthProvider.credential(u.email, pass));
     await FB.remove(FB.ref(FB.db, 'pagos/' + key));
-    toast('🗑 Pago eliminado');
+    toast(p.recibo ? '🗑 Recibo eliminado' : '🗑 Pago eliminado');
   } catch(e) { toast(/invalid|wrong/.test(e.code || '') ? '❌ Contraseña incorrecta' : '❌ ' + (e.code || e.message)); }
 }
 
@@ -1006,8 +1024,12 @@ function vCatalogo(categoria) {
         ${e.ultimo ? `<span class="tag g">Último pago ${esc(e.ultimo.fecha)} · ${fmt(e.ultimo.cantidad)}</span>` : '<span class="tag o">Sin pagos registrados</span>'}
       </div>
       ${s.notas ? `<div style="font-size:12px;color:var(--text2);margin-top:6px">📝 ${esc(s.notas)}</div>` : ''}
+      ${e.recibos.length ? `<div style="font-size:12px;color:var(--text2);margin-top:8px">📄 Recibos (${e.recibos.length}) · referencia, no son pagos</div><div class="tags">${e.recibos.slice(0, 12).map(({ r, pago }) =>
+        `${ligaDoc(r.imgUrl, `${esc(r.periodo || r.fecha)} · ${fmt(r.cantidad)}${r.vence ? ' · vence ' + esc(r.vence) : ''}`, pago ? 'g' : r.cantidad === 0 ? '' : 'o')}<span class="tag ${pago ? 'g' : r.cantidad === 0 ? '' : 'o'}">${pago ? '✅ Pagado ' + esc(pago.fecha) : r.cantidad === 0 ? 'En $0' : '⏳ Sin comprobante'}</span><span class="tag r" style="cursor:pointer" onclick="borrarPago('${esc(r._key)}')">✕</span>`).join('')}</div>` : ''}
+      ${e.comprobantes.length ? `<div style="font-size:12px;color:var(--text2);margin-top:8px">🧾 Comprobantes de pago (${e.comprobantes.length})</div><div class="tags">${e.comprobantes.slice(0, 12).map(p =>
+        ligaDoc(p.imgUrl, `${esc(p.periodo || p.fecha)} · ${fmt(p.cantidad)}`, 'g')).join('')}</div>` : ''}
       <div class="acts">
-        <button onclick="registrarDeCatalogo('${esc(id)}')">💾 Registrar pago</button>
+        <button onclick="registrarDeCatalogo('${esc(id)}')">💾 Registrar</button>
         <button onclick="editCat='${esc(id)}';pintar()" style="flex:0 0 70px">✏️</button>
         <button class="del" onclick="borrarCat('${esc(id)}')">🗑</button>
       </div>
@@ -1077,19 +1099,21 @@ async function borrarCat(id) {
 function abrirRegistro(datos) {
   foto = null; fotoUrl = null; fotoMime = 'image/jpeg';
   $('sheetBox').innerHTML = `
-    <div class="hd"><b>➕ Registrar pago</b><button onclick="cerrarRegistro()">✕</button></div>
+    <div class="hd"><b>➕ Registrar</b><button onclick="cerrarRegistro()">✕</button></div>
     <div class="g3"><button class="btn" onclick="$('camIn').click()">📷 Cámara</button><button class="btn" onclick="$('galIn').click()">🖼 Galería</button><button class="btn" onclick="$('pdfIn').click()">📄 PDF</button></div>
     <div id="rFoto"></div><div id="rMsg"></div>
     ${formPago(datos || {})}`;
   $('sheet').classList.add('on');
   actualizarCampos();
 }
+const esRecibo = () => !!($('p_doc') && $('p_doc').value === 'recibo');
 function cerrarRegistro() { $('sheet').classList.remove('on'); }
 function formPago(d) {
   const opt = (val, txt, sel) => `<option value="${esc(val)}" ${sel ? 'selected' : ''}>${esc(txt)}</option>`;
   const v = x => esc(x == null ? '' : x);
   const t = d.tipo_pago ? tipoPago(d) : 'tarjeta';
   return `<div style="display:flex;flex-direction:column;gap:10px" id="rForm">
+    <div class="f" id="w_doc"><label>¿Qué es? *</label><select id="p_doc" onchange="actualizarCampos()">${opt('pago', '💸 Comprobante de pago', d.documento !== 'recibo')}${opt('recibo', '📄 Recibo / aviso de cobro (no es pago)', d.documento === 'recibo')}</select></div>
     <div class="f"><label>Tipo de pago *</label><select id="p_tipo" onchange="actualizarCampos()">${Object.entries(TIPOS).map(([k, x]) => opt(k, x.icon + ' ' + x.label, t === k)).join('')}</select></div>
     <div id="w_serv">
       <div class="g2"><div class="f"><label id="l_serv">Servicio *</label><input id="p_servicio" value="${v(d.servicio)}" placeholder="CFE, Telmex…"></div>
@@ -1099,13 +1123,13 @@ function formPago(d) {
       <div class="f" style="margin-top:10px"><label>Fecha límite</label><input id="p_vence" value="${v(d.fecha_limite || d.vence)}" placeholder="DD/MM/YYYY"></div>
     </div>
     <div class="f" id="w_prop"><label>Propiedad *</label><select id="p_prop">${opt('', '— elegir —', !d.departamento)}${PROPIEDADES.map(p => opt(p, p, normProp(d.departamento) === p)).join('')}</select></div>
-    <div class="g2"><div class="f"><label>Fecha *</label><input id="p_fecha" value="${v(d.fecha || hoyDMY())}" placeholder="DD/MM/YYYY"></div>
+    <div class="g2"><div class="f"><label id="l_fecha">Fecha *</label><input id="p_fecha" value="${v(d.fecha || hoyDMY())}" placeholder="DD/MM/YYYY"></div>
     <div class="f"><label>Hora</label><input id="p_hora" type="time" value="${v(normHora(d.hora))}"></div></div>
-    <div class="g2"><div class="f"><label>Cantidad *</label><input id="p_total" type="number" inputmode="decimal" value="${v(parseFloat(d.total) > 0 ? d.total : '')}" placeholder="0.00"></div>
-    <div class="f"><label>Método *</label><select id="p_metodo">${opt('transferencia', '🔁 Transferencia', metodoPago(d) !== 'cajero')}${opt('cajero', '🏧 Cajero (efectivo)', metodoPago(d) === 'cajero')}</select></div></div>
+    <div class="g2"><div class="f"><label id="l_total">Cantidad *</label><input id="p_total" type="number" inputmode="decimal" value="${v(parseFloat(d.total) >= 0 ? d.total : '')}" placeholder="0.00"></div>
+    <div class="f" id="w_metodo"><label>Método *</label><select id="p_metodo">${opt('transferencia', '🔁 Transferencia', metodoPago(d) !== 'cajero')}${opt('cajero', '🏧 Cajero (efectivo)', metodoPago(d) === 'cajero')}</select></div></div>
     <div class="g2"><div class="f"><label>Moneda</label><select id="p_moneda">${['MXN','USD','EUR','GBP'].map(m => opt(m, m, (d.moneda || 'MXN') === m)).join('')}</select></div>
-    <div class="f"><label id="l_banco">Banco destino</label><input id="p_banco" value="${v(d.banco)}" placeholder="Banco que recibe"></div></div>
-    <div class="g2"><div class="f"><label>Banco origen</label><input id="p_borigen" value="${v(d.banco_origen)}"></div>
+    <div class="f" id="w_banco"><label id="l_banco">Banco destino</label><input id="p_banco" value="${v(d.banco)}" placeholder="Banco que recibe"></div></div>
+    <div class="g2" id="w_origen"><div class="f"><label>Banco origen</label><input id="p_borigen" value="${v(d.banco_origen)}"></div>
     <div class="f"><label>Cuenta origen (últ. 4)</label><input id="p_corigen" value="${v(d.cuenta_origen)}" inputmode="numeric"></div></div>
     <div class="g2"><div class="f" id="w_tarjeta"><label>Tarjeta destino (últ. 4)</label><input id="p_tarjeta" value="${v(d.tarjeta_pagada || d.tarjeta)}" inputmode="numeric"></div>
     <div class="f"><label>Autorización / Ref.</label><input id="p_folio" value="${v(d.folio)}"></div></div>
@@ -1115,6 +1139,15 @@ function formPago(d) {
 }
 function actualizarCampos() {
   const t = $('p_tipo').value, show = (id, on) => { if ($(id)) $(id).style.display = on ? '' : 'none'; };
+  // Solo servicios y colegiaturas (los del catálogo) tienen recibo (la tarjeta usa el estado de cuenta)
+  const puedeRecibo = ['servicio', 'colegiatura'].includes(t);
+  if (!puedeRecibo && $('p_doc')) $('p_doc').value = 'pago';
+  const rec = esRecibo();
+  show('w_doc', puedeRecibo);
+  show('w_metodo', !rec); show('w_banco', !rec); show('w_origen', !rec);
+  $('l_fecha').textContent = rec ? 'Fecha del recibo *' : 'Fecha *';
+  $('l_total').textContent = rec ? 'Total a pagar *' : 'Cantidad *';
+  $('btnGuardar').textContent = rec ? '💾 Guardar recibo' : '💾 Guardar pago';
   show('w_serv', t !== 'tarjeta');
   show('w_alumno', t === 'colegiatura');
   show('w_prop', t === 'servicio' || t === 'mantenimiento');
@@ -1147,7 +1180,7 @@ function registrarDeCatalogo(id) {
   abrirRegistro({ tipo_pago: s.categoria === 'colegiatura' ? 'colegiatura' : 'servicio', servicio: s.servicio, alumno: s.alumno,
     numero_servicio: s.numero, departamento: s.propiedad, total: s.monto || '', periodo: MESES[h.getMonth()] + ' ' + h.getFullYear(),
     vence: e.vence ? fmtDMY(e.vence) : '' });
-  $('rMsg').innerHTML = `<div class="banner">${s.categoria === 'colegiatura' ? '🎓 ' + esc(s.alumno) + ' · ' + esc(s.servicio) : '💡 ' + esc(s.servicio) + ' · ' + esc(s.propiedad)} — agrega la foto del comprobante si la tienes</div>`;
+  $('rMsg').innerHTML = `<div class="banner">${s.categoria === 'colegiatura' ? '🎓 ' + esc(s.alumno) + ' · ' + esc(s.servicio) : '💡 ' + esc(s.servicio) + ' · ' + esc(s.propiedad)} — sube la foto o PDF del <b>recibo</b> o del <b>comprobante de pago</b>: la IA detecta cuál es. El recibo es solo referencia; el servicio queda pagado con el comprobante.</div>`;
 }
 
 // ── foto + IA ──
@@ -1197,15 +1230,20 @@ function onFoto(input) {
   rd.readAsDataURL(file);
 }
 async function leerConIA(b64, mime = 'image/jpeg') {
-  const prompt = `Analiza este comprobante de PAGO y responde ÚNICAMENTE con JSON válido, sin markdown.
+  const prompt = `Analiza este comprobante de PAGO o RECIBO (por ejemplo el recibo de luz de CFE) y responde ÚNICAMENTE con JSON válido, sin markdown.
 Tipos (tipo_pago):
 - "tarjeta": pago a una tarjeta de crédito (PAGO DE TARJETA, PAGO APLICADO, abono a tarjeta) o una transferencia/SPEI enviada desde la app del banco para pagar una tarjeta.
 - "servicio": recibo o pago de CFE (luz), agua (JAPAY, CONAGUA u organismo de agua), teléfono/internet/cable (Telmex, Telcel, AT&T, Izzi, Totalplay, Megacable), gas, predial.
 - "mantenimiento": cuota de mantenimiento o administración de edificio/condominio (Arthouse, Townsquare).
 - "colegiatura": pago a escuela, colegio, universidad (colegiatura, inscripción, matrícula).
 - "otro": cualquier otro pago.
+PRIMERO decide "documento" (OBLIGATORIO):
+- "recibo": RECIBO o aviso de cobro que manda el servicio para cobrar; NO prueba que se pagó. Señales: "TOTAL A PAGAR", "PERIODO FACTURADO", "fecha límite de pago", "corte a partir de", historial de consumo (kWh, m3), datos del medidor o tarifa, código de barras para pagar. El recibo de luz de CFE, el de agua (JAPAY) y el estado de cuenta de Telmex/Izzi son "recibo", aunque digan "domiciliado" o "recurrente" o el total sea $0.
+- "pago": comprobante de que el dinero YA salió: captura de transferencia/SPEI, ticket de cajero o de caja, "PAGADO", "operación exitosa", número de autorización o clave de rastreo, cuenta de origen.
+Si dudas, es "recibo".
+Si es recibo: "total" es el TOTAL A PAGAR (si dice $0 por saldo a favor, subsidio o sin consumo pon "0"), "fecha" es la fecha de emisión o corte del recibo, "periodo" el periodo facturado y "fecha_limite" la fecha límite de pago; OMITE los datos de banco.
 Responde con este JSON exacto (OMITE campos vacíos, JSON compacto en una línea):
-{"tipo_pago":"","fecha":"DD/MM/YYYY con año de 4 dígitos (13/nov/26 -> 13/11/2026)","hora":"HH:MM 24h","total":"número sin comas","moneda":"MXN o USD o EUR o GBP","metodo_pago":"transferencia (captura de app/banca en línea/SPEI) o cajero (ticket de cajero/practicaja, efectivo)","banco":"banco DESTINO o de la tarjeta","banco_origen":"banco desde el que salió el dinero","cuenta_origen":"últimos 4 de la cuenta origen","tarjeta_pagada":"últimos 4 de la tarjeta/cuenta destino","servicio":"empresa o escuela que recibe (CFE, Telmex, Agua, Colegio X, Administración Arthouse)","numero_servicio":"número de servicio, línea telefónica, contrato o matrícula","periodo":"periodo pagado ej Nov 2026","fecha_limite":"DD/MM/YYYY si aparece","departamento":"Casa, Arthouse o Townsquare si aparece","alumno":"nombre del alumno si es colegiatura","folio":"autorización, folio o referencia","concepto":"concepto"}`;
+{"documento":"recibo o pago","tipo_pago":"","fecha":"DD/MM/YYYY con año de 4 dígitos (13/nov/26 -> 13/11/2026)","hora":"HH:MM 24h","total":"número sin comas","moneda":"MXN o USD o EUR o GBP","metodo_pago":"transferencia (captura de app/banca en línea/SPEI) o cajero (ticket de cajero/practicaja, efectivo)","banco":"banco DESTINO o de la tarjeta","banco_origen":"banco desde el que salió el dinero","cuenta_origen":"últimos 4 de la cuenta origen","tarjeta_pagada":"últimos 4 de la tarjeta/cuenta destino","servicio":"empresa o escuela que recibe (CFE, Telmex, Agua, Colegio X, Administración Arthouse)","numero_servicio":"número de servicio, línea telefónica, contrato o matrícula","periodo":"periodo pagado ej Nov 2026","fecha_limite":"DD/MM/YYYY si aparece","departamento":"Casa, Arthouse o Townsquare si aparece","alumno":"nombre del alumno si es colegiatura","folio":"autorización, folio o referencia","concepto":"concepto"}`;
   try {
     const body = JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, messages: [{ role: 'user', content: [
       mime === 'application/pdf'
@@ -1230,12 +1268,14 @@ Responde con este JSON exacto (OMITE campos vacíos, JSON compacto en una línea
     const txt = ((data.content || []).find(b => b.type === 'text') || {}).text || '';
     const clean = txt.replace(/```json|```/gi, '');
     const d = JSON.parse(clean.substring(clean.indexOf('{'), clean.lastIndexOf('}') + 1));
+    if (d.total != null) d.total = String(d.total).replace(/[^0-9.]/g, ''); // "$0" o "1,234.00" -> número
+    if (!/^(recibo|pago)$/.test(d.documento || '')) d.documento = (d.fecha_limite || d.periodo) && !d.banco_origen && !d.cuenta_origen ? 'recibo' : 'pago';
     const fotoHtml = $('rFoto').innerHTML;
     $('rForm').outerHTML = formPago(d);
     $('rFoto').innerHTML = fotoHtml;
     actualizarCampos();
     autocompletar(false);
-    $('rMsg').innerHTML = `<div class="banner">✅ ${TIPOS[tipoPago(d)].icon} ${TIPOS[tipoPago(d)].label} detectado — revisa y guarda</div>`;
+    $('rMsg').innerHTML = `<div class="banner">✅ ${esRecibo() ? '📄 Recibo (no es pago) de ' : ''}${TIPOS[tipoPago(d)].icon} ${TIPOS[tipoPago(d)].label} detectado — revisa y guarda</div>`;
   } catch(e) {
     console.warn('[IA]', e);
     $('rMsg').innerHTML = `<div class="banner err">⚠️ No se pudo leer con IA (${esc(e.message)}). Llena los datos a mano.</div>`;
@@ -1254,8 +1294,12 @@ async function subirFoto() {
 async function guardarPago() {
   const val = x => ($(x) ? $(x).value : '').trim();
   const tipo = val('p_tipo');
-  const cantidad = validarMonto(val('p_total'));
-  if (!cantidad) return toast('⚠️ Escribe la cantidad');
+  const recibo = esRecibo() && ['servicio', 'colegiatura'].includes(tipo);
+  // Un pago siempre es mayor a 0; un recibo puede venir en $0
+  const cantidad = recibo ? montoOCero(val('p_total')) : validarMonto(val('p_total'));
+  if (cantidad === null) return toast(recibo ? '⚠️ Escribe el total a pagar del recibo (0 si viene en $0)' : '⚠️ Escribe la cantidad');
+  if (recibo && soloDigitos(val('p_num')).length < 4) return toast('⚠️ Escribe el número de servicio (o matrícula) del recibo');
+  if (recibo && !foto && !confirm('¿Guardar el recibo sin foto ni PDF?')) return;
   const fecha = validarFecha(val('p_fecha'));
   if (!fecha) return toast('⚠️ Fecha inválida (DD/MM/YYYY)');
   const servicio = val('p_servicio').slice(0, 80), prop = val('p_prop'), alumno = val('p_alumno').slice(0, 60);
@@ -1267,7 +1311,7 @@ async function guardarPago() {
   let vence = '';
   if (tipo !== 'tarjeta' && val('p_vence')) { vence = validarFecha(val('p_vence')); if (!vence) return toast('⚠️ Fecha límite inválida'); }
   const f = fechaDeDMY(fecha), hoy = new Date();
-  if (Math.abs(f - hoy) > 7 * 86400000 && !confirm(`La fecha del pago es ${fecha} (hoy es ${hoyDMY()}). ¿Guardarlo así?`)) return;
+  if (!recibo && Math.abs(f - hoy) > 7 * 86400000 && !confirm(`La fecha del pago es ${fecha} (hoy es ${hoyDMY()}). ¿Guardarlo así?`)) return;
   const btn = $('btnGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
   const pago = {
     ts: Date.now(), who: userName, tipo_pago: tipo, fecha, cantidad, moneda: val('p_moneda') || 'MXN',
@@ -1279,17 +1323,19 @@ async function guardarPago() {
     numero_servicio: tipo === 'tarjeta' ? '' : val('p_num').slice(0, 40), periodo: val('p_periodo').slice(0, 40), vence,
     hora: normHora(val('p_hora')), folio: val('p_folio').slice(0, 40), concepto: val('p_concepto').slice(0, 200),
   };
+  if (recibo) { pago.recibo = true; pago.metodo = ''; pago.banco = pago.banco_origen = pago.cuenta_origen = ''; }
   try {
     if (foto) { btn.textContent = fotoMime === 'application/pdf' ? 'Subiendo PDF…' : 'Subiendo imagen…'; try { pago.imgUrl = await subirFoto(); } catch(e) { toast('⚠️ ' + e.message + ' — se guarda sin imagen'); } }
     await FB.push(FB.ref(FB.db, 'pagos'), pago);
-    toast('✅ Pago guardado');
+    toast(recibo ? '✅ Recibo guardado (no cuenta como pago)' : '✅ Pago guardado');
     cerrarRegistro();
     vista = tipo === 'tarjeta' ? 'tarjetas' : tipo === 'colegiatura' ? 'colegiaturas' : (tipo === 'otro' ? 'historial' : 'propiedades');
     if (tipo === 'colegiatura') vista = 'colegiaturas';
+    if (recibo) vista = tipo === 'colegiatura' ? 'colegiaturas' : 'servicios';
     pintar();
   } catch(e) {
     toast('❌ ' + (/permission/i.test(e.message) ? 'Firebase no permite guardar en "pagos" (reglas)' : e.message));
-  } finally { btn.disabled = false; btn.textContent = '💾 Guardar pago'; }
+  } finally { btn.disabled = false; btn.textContent = recibo ? '💾 Guardar recibo' : '💾 Guardar pago'; }
 }
 </script>
 </body>
