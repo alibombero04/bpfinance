@@ -277,7 +277,7 @@ let foto = null, fotoUrl = null, fotoMime = 'image/jpeg'; // fotoMime: image/jpe
 
 // ── utilidades ──
 const $ = id => document.getElementById(id);
-const APP_VER = '2026-11-27c';
+const APP_VER = '2026-11-27d';
 async function revisarVersion() {
   try {
     const t = await (await fetch('/?v=' + Date.now(), { cache: 'no-store' })).text();
@@ -1002,8 +1002,9 @@ function pedirClave(titulo, esPin, olvide) {
   return new Promise(res => {
     const fin = v => { $('pinSheet').classList.remove('on'); res(v); };
     $('pinBox').innerHTML = `<div class="hd"><b style="font-size:16px">${titulo}</b><button id="pinX">✕</button></div>
-      <div class="f"><input id="pinIn" type="password" ${esPin ? 'inputmode="numeric" maxlength="4" autocomplete="off" style="font-size:28px;letter-spacing:14px;text-align:center"' : 'autocomplete="current-password" placeholder="Contraseña de la app"'}></div>
-      <button class="btn" id="pinOk">Aceptar</button>${olvide ? '<button class="btn-lite" id="pinOlv">¿Olvidaste tu PIN?</button>' : ''}`;
+      <div class="f">${esPin ? '<input id="pinIn" type="password" inputmode="numeric" maxlength="4" autocomplete="off" style="font-size:28px;letter-spacing:14px;text-align:center">'
+        : `<div class="inpw"><input id="pinIn" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Contraseña con la que entras" style="padding-right:46px"><button class="eye" type="button" onclick="const i=$('pinIn');i.type=i.type==='password'?'text':'password'" aria-label="Mostrar contraseña"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>`}</div>
+      <button class="btn" id="pinOk">Aceptar</button>${olvide ? `<button class="btn-lite" id="pinOlv">${esPin ? '¿Olvidaste tu PIN?' : '¿Olvidaste tu contraseña?'}</button>` : ''}`;
     $('pinX').onclick = () => fin(null);
     $('pinOk').onclick = () => fin($('pinIn').value);
     $('pinIn').onkeydown = e => { if (e.key === 'Enter') fin($('pinIn').value); };
@@ -1032,10 +1033,22 @@ async function autorizarBorrado(que) {
     }
   }
   // Crear o restablecer el PIN: primero la contraseña de la app
-  const pass = await pedirClave(mio ? '🔑 Para cambiar tu PIN escribe tu contraseña de la app' : '🔑 Vas a crear tu PIN para eliminar. Primero tu contraseña de la app', false, false);
+  const pass = await pedirClave(`🔑 Paso 1 de 2: escribe la CONTRASEÑA con la que entras a la app (${esc(u.email)}). El PIN lo ${mio ? 'cambias' : 'creas'} en el paso 2.`, false, true);
   if (!pass) return false;
+  if (pass === '__olvide') {
+    try { await FB.sendPasswordResetEmail(FB.auth, u.email); toast('📧 Te mandamos un correo a ' + u.email + ' para cambiar la contraseña'); }
+    catch(e) { toast('❌ ' + (e.code || e.message)); }
+    return false;
+  }
   try { await FB.reauthenticateWithCredential(u, FB.EmailAuthProvider.credential(u.email, pass)); }
-  catch(e) { toast(/invalid|wrong/.test(e.code || '') ? '❌ Contraseña incorrecta' : '❌ ' + (e.code || e.message)); return false; }
+  catch(e) {
+    console.warn('[PIN] reauth', e.code, e.message);
+    const c = e.code || '';
+    toast(/wrong-password|invalid-credential|invalid-login-credentials/.test(c)
+      ? (/^d{4}$/.test(pass) ? '❌ Ahí va la contraseña con la que entras a la app, no el PIN' : '❌ Esa no es la contraseña con la que entras a la app')
+      : '❌ No se pudo verificar (' + (c || e.message) + ')');
+    return false;
+  }
   const p1 = await pedirClave('🔢 Escribe tu nuevo PIN de 4 dígitos', true, false);
   if (!p1) return false;
   if (!/^\d{4}$/.test(p1)) { toast('⚠️ El PIN son 4 números'); return false; }
